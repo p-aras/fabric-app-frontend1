@@ -3601,80 +3601,84 @@ export default function Parta() {
                 <div className="meta-label">Style</div>
                 <div className="meta-value">{meta.style || "—"}</div>
               </div>
-              <div className="meta-item" style={{ border: '1px solid rgba(99, 102, 241, 0.25)', background: 'rgba(255, 255, 255, 0.9)' }}>
-                <div className="meta-label" style={{ color: 'var(--brand)', fontWeight: 'bold' }}>Kharcha (Expense)</div>
-                <input
-                  type="number"
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    marginTop: '8px',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(99, 102, 241, 0.15)',
-                    background: '#FFFFFF',
-                    color: 'var(--text)',
-                    outline: 'none',
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    transition: 'all 0.2s ease'
-                  }}
-                  value={meta.kharcha || ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setMeta(prev => ({ ...prev, kharcha: val }));
-                  }}
-                  onBlur={handleKharchaBlurOrEnter}
-                  onKeyDown={handleKharchaBlurOrEnter}
-                  placeholder="Enter Kharcha..."
-                  disabled={isAdmin || meta.checkedBySahilSir === "yes"}
-                  aria-label="Kharcha Amount"
-                />
-              </div>
-              <div className="meta-item" style={{ border: '1px solid rgba(99, 102, 241, 0.25)', background: 'rgba(255, 255, 255, 0.9)' }}>
-                <div className="meta-label" style={{ color: 'var(--brand)', fontWeight: 'bold' }}>Checked By Sahil Sir</div>
-                <select
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    marginTop: '8px',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(99, 102, 241, 0.15)',
-                    background: '#FFFFFF',
-                    color: 'var(--text)',
-                    outline: 'none',
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    appearance: 'auto',
-                    transition: 'all 0.2s ease'
-                  }}
-                  value={meta.checkedBySahilSir || "no"}
-                  disabled={isAdmin}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "yes") {
-                      const confirmLock = window.confirm("Are you sure you want to confirm and lock this Parta? This will disable editing for all data.");
-                      if (confirmLock) {
-                        setMeta(prev => ({ ...prev, checkedBySahilSir: "yes" }));
+              {!isAdmin && (
+                <div className="meta-item" style={{ border: '1px solid rgba(99, 102, 241, 0.25)', background: 'rgba(255, 255, 255, 0.9)' }}>
+                  <div className="meta-label" style={{ color: 'var(--brand)', fontWeight: 'bold' }}>Kharcha (Expense)</div>
+                  <input
+                    type="number"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      marginTop: '8px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(99, 102, 241, 0.15)',
+                      background: '#FFFFFF',
+                      color: 'var(--text)',
+                      outline: 'none',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      transition: 'all 0.2s ease'
+                    }}
+                    value={meta.kharcha || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMeta(prev => ({ ...prev, kharcha: val }));
+                    }}
+                    onBlur={handleKharchaBlurOrEnter}
+                    onKeyDown={handleKharchaBlurOrEnter}
+                    placeholder="Enter Kharcha..."
+                    disabled={isAdmin || meta.checkedBySahilSir === "yes"}
+                    aria-label="Kharcha Amount"
+                  />
+                </div>
+              )}
+              {!isAdmin && (
+                <div className="meta-item" style={{ border: '1px solid rgba(99, 102, 241, 0.25)', background: 'rgba(255, 255, 255, 0.9)' }}>
+                  <div className="meta-label" style={{ color: 'var(--brand)', fontWeight: 'bold' }}>Checked By Sahil Sir</div>
+                  <select
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      marginTop: '8px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(99, 102, 241, 0.15)',
+                      background: '#FFFFFF',
+                      color: 'var(--text)',
+                      outline: 'none',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      appearance: 'auto',
+                      transition: 'all 0.2s ease'
+                    }}
+                    value={meta.checkedBySahilSir || "no"}
+                    disabled={isAdmin}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "yes") {
+                        const confirmLock = window.confirm("Are you sure you want to confirm and lock this Parta? This will disable editing for all data.");
+                        if (confirmLock) {
+                          setMeta(prev => ({ ...prev, checkedBySahilSir: "yes" }));
+                        } else {
+                          // Revert selection
+                          e.target.value = "no";
+                        }
                       } else {
-                        // Revert selection
-                        e.target.value = "no";
+                        const confirmUnlock = window.confirm("Are you sure you want to unlock this Parta?");
+                        if (confirmUnlock) {
+                          setMeta(prev => ({ ...prev, checkedBySahilSir: "no" }));
+                        } else {
+                          // Revert selection
+                          e.target.value = "yes";
+                        }
                       }
-                    } else {
-                      const confirmUnlock = window.confirm("Are you sure you want to unlock this Parta?");
-                      if (confirmUnlock) {
-                        setMeta(prev => ({ ...prev, checkedBySahilSir: "no" }));
-                      } else {
-                        // Revert selection
-                        e.target.value = "yes";
-                      }
-                    }
-                  }}
-                  aria-label="Checked By Sahil Sir confirmation dropdown"
-                >
-                  <option value="no">No</option>
-                  <option value="yes">Yes</option>
-                </select>
-              </div>
+                    }}
+                    aria-label="Checked By Sahil Sir confirmation dropdown"
+                  >
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </div>
+              )}
             </div>
           )}
 
