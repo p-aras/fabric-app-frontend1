@@ -198,7 +198,7 @@ const ReturnStickerGenerator = ({
   const loadNextReturnBarcodeId = async () => {
     try {
       setIsLoadingSequence(true);
-      const response = await fetch('http://localhost:5001/api/fabric-receiving/next-return-barcode');
+      const response = await fetch('https://fabric-backend-9aua.onrender.com//api/fabric-receiving/next-return-barcode');
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
       
@@ -232,7 +232,7 @@ const ReturnStickerGenerator = ({
 
   const getNextSequentialBarcodeId = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/fabric-receiving/next-return-barcode');
+      const response = await fetch('https://fabric-backend-9aua.onrender.com//api/fabric-receiving/next-return-barcode');
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
       
@@ -263,7 +263,7 @@ const ReturnStickerGenerator = ({
       // The backend already created the entry when you clicked "Confirm Return"
       // So here we should just update the existing record with the sticker info
       
-      const API_URL = 'http://localhost:5001/api/fabric-receiving/update-return-sticker';
+      const API_URL = 'https://fabric-backend-9aua.onrender.com//api/fabric-receiving/update-return-sticker';
       
       const payload = {
         originalBarcodeId: stickerData.originalBarcodeId,

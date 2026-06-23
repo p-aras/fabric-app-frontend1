@@ -24,7 +24,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
   const [currentReturnData, setCurrentReturnData] = useState(null);
   const [pendingReturnRecords, setPendingReturnRecords] = useState([]);
   
-  const API_BASE_URL = 'http://localhost:5001/api/fabric-receiving';
+  const API_BASE_URL = 'https://fabric-backend-9aua.onrender.com//api/fabric-receiving';
 
   useEffect(() => {
     if (selectedJob) {

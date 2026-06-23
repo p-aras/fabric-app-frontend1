@@ -1,4 +1,4 @@
-export const BASE_URL = 'http://localhost:5001/api';
+export const BASE_URL = 'https://fabric-backend-9aua.onrender.com//api';
 
 const getHeaders = () => {
   const token = localStorage.getItem('twms_token');

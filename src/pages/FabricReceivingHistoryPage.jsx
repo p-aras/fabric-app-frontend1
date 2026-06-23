@@ -9,7 +9,7 @@ export default function FabricReceivingHistoryPage() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const API_URL = 'http://localhost:5001/api/fabric-receiving/receiving-history';
+  const API_URL = 'https://fabric-backend-9aua.onrender.com//api/fabric-receiving/receiving-history';
 
   // Load history on mount
   useEffect(() => {
