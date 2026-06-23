@@ -194,7 +194,7 @@ export default function Parta() {
 
       if (isSaveToMySQL) {
         console.log("Saving to MySQL database...");
-        const res = await fetch("https://fabric-backend-9aua.onrender.com//api/parta/save", {
+        const res = await fetch("https://fabric-backend-9aua.onrender.com/api/parta/save", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -243,7 +243,7 @@ export default function Parta() {
   async function loadLatestMatrixBlock(lotNumber) {
     try {
       console.log("Checking MySQL database for lot:", lotNumber);
-      const localUrl = `https://fabric-backend-9aua.onrender.com//api/parta/load/${encodeURIComponent(lotNumber)}`;
+      const localUrl = `https://fabric-backend-9aua.onrender.com/api/parta/load/${encodeURIComponent(lotNumber)}`;
       const localRes = await fetch(localUrl, { method: "GET", keepalive: true });
       if (localRes.ok) {
         const localJson = await localRes.json();
@@ -1034,7 +1034,7 @@ export default function Parta() {
       let totalReturnedWeightVal = 0;
 
       try {
-        const issuedRollsURL = `https://fabric-backend-9aua.onrender.com//api/fabric-receiving/issued-rolls/${encodeURIComponent(lotVal)}`;
+        const issuedRollsURL = `https://fabric-backend-9aua.onrender.com/api/fabric-receiving/issued-rolls/${encodeURIComponent(lotVal)}`;
         const issuedRes = await fetch(issuedRollsURL);
         if (issuedRes.ok) {
           const issuedJson = await issuedRes.json();
