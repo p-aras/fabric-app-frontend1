@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './Layout.jsx';
+import HomePage from './pages/HomePage.jsx';
 import Materials from './pages/Materials.jsx';
 import WarehousePage from './pages/WarehousePage.jsx';
 import GRNPage from './pages/GRNPage.jsx';
@@ -18,12 +19,19 @@ import DyeingMaterialForm from './pages/DyeingMaterialForm.jsx';
 import Parta from './pages/Parta.jsx';
 import FabricReceivingHistoryPage from './pages/FabricReceivingHistoryPage.jsx';
 import PartaPendingPage from './pages/PartaPendingPage.jsx';
+import OldInventory from './pages/OldInventory.jsx';
+import JobOrder from './pages/JobOrder.jsx';
+import FabricStockMtr from './pages/FabricStockMtr.jsx';
+import DailyInventoryQuantity from './pages/DailyInventoryQuantity.jsx';
 
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('twms_dark') === 'true';
   });
+
+  const [showSplash, setShowSplash] = useState(true);
+  const [fadeSplash, setFadeSplash] = useState(false);
 
   const [user, setUser] = useState(() => {
     try {
@@ -33,6 +41,23 @@ export default function App() {
       return null;
     }
   });
+
+  useEffect(() => {
+    // Start fading out after 1800ms
+    const fadeTimer = setTimeout(() => {
+      setFadeSplash(true);
+    }, 1800);
+
+    // Completely remove after 2200ms
+    const removeTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2200);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(removeTimer);
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('twms_dark', darkMode);
@@ -52,10 +77,171 @@ export default function App() {
   };
 
   return (
-    <BrowserRouter>
+    <>
+      {showSplash && (
+        <div className={`splash-screen ${fadeSplash ? 'fade-out' : ''}`}>
+          <div className="splash-logo-container">
+            <div className="splash-logo-circle-1"></div>
+            <div className="splash-logo-circle-2"></div>
+            <div className="splash-logo-badge">TWMS</div>
+          </div>
+          <h1 className="splash-title">TEXTILE WAREHOUSE</h1>
+          <p className="splash-subtitle">Management System</p>
+          
+          <div className="splash-progress-track">
+            <div className="splash-progress-fill"></div>
+          </div>
+          
+          <div className="splash-footer">Optimizing Fabric Storage & Production Flow...</div>
+
+          <style>{`
+            .splash-screen {
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100vw;
+              height: 100vh;
+              background: radial-gradient(circle at center, #1e3c72 0%, #0f172a 100%);
+              z-index: 999999;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+              transition: opacity 0.4s ease, visibility 0.4s ease;
+            }
+
+            .splash-screen.fade-out {
+              opacity: 0;
+              visibility: hidden;
+            }
+
+            .splash-logo-container {
+              position: relative;
+              width: 120px;
+              height: 120px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              margin-bottom: 24px;
+            }
+
+            .splash-logo-circle-1 {
+              position: absolute;
+              width: 100%;
+              height: 100%;
+              border: 2px dashed rgba(255, 255, 255, 0.15);
+              border-radius: 50%;
+              animation: spin-clockwise 10s linear infinite;
+            }
+
+            .splash-logo-circle-2 {
+              position: absolute;
+              width: 80%;
+              height: 80%;
+              border: 2px solid rgba(96, 165, 250, 0.3);
+              border-radius: 50%;
+              animation: spin-counter-clockwise 6s linear infinite;
+            }
+
+            .splash-logo-badge {
+              width: 70px;
+              height: 70px;
+              background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+              border-radius: 20px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-weight: 900;
+              font-size: 20px;
+              letter-spacing: 1px;
+              box-shadow: 0 0 30px rgba(124, 58, 237, 0.4);
+              z-index: 2;
+              animation: pulse-glow 2s ease-in-out infinite;
+            }
+
+            .splash-title {
+              font-size: 28px;
+              font-weight: 900;
+              letter-spacing: 4px;
+              margin: 0;
+              text-align: center;
+              background: linear-gradient(to right, #ffffff, #93c5fd);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+            }
+
+            .splash-subtitle {
+              font-size: 13px;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 6px;
+              color: #93c5fd;
+              margin: 6px 0 36px 0;
+              opacity: 0.8;
+            }
+
+            .splash-progress-track {
+              width: 200px;
+              height: 4px;
+              background: rgba(255, 255, 255, 0.1);
+              border-radius: 2px;
+              overflow: hidden;
+              margin-bottom: 24px;
+            }
+
+            .splash-progress-fill {
+              height: 100%;
+              width: 0%;
+              background: linear-gradient(90deg, #2563eb, #7c3aed);
+              border-radius: 2px;
+              animation: progress-load 1.8s ease-in-out forwards;
+            }
+
+            .splash-footer {
+              font-size: 11px;
+              color: rgba(255, 255, 255, 0.4);
+              letter-spacing: 0.5px;
+              position: absolute;
+              bottom: 30px;
+              animation: fade-in-out 2s infinite;
+            }
+
+            @keyframes spin-clockwise {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+
+            @keyframes spin-counter-clockwise {
+              0% { transform: rotate(360deg); }
+              100% { transform: rotate(0deg); }
+            }
+
+            @keyframes pulse-glow {
+              0%, 100% { transform: scale(1); box-shadow: 0 0 25px rgba(124, 58, 237, 0.4); }
+              50% { transform: scale(1.05); box-shadow: 0 0 40px rgba(124, 58, 237, 0.6); }
+            }
+
+            @keyframes progress-load {
+              0% { width: 0%; }
+              30% { width: 40%; }
+              70% { width: 85%; }
+              100% { width: 100%; }
+            }
+
+            @keyframes fade-in-out {
+              0%, 100% { opacity: 0.5; }
+              50% { opacity: 0.9; }
+            }
+          `}</style>
+        </div>
+      )}
+      <BrowserRouter>
       {user ? (
         <Layout darkMode={darkMode} toggleDark={toggleDark} currentUser={user} handleLogout={handleLogout}>
           <Routes>
+            <Route path="/" element={<HomePage />} />
             <Route path="/materials" element={<Materials />} />
             <Route path="/fabric-sticker" element={<FabricStickerForm />} />
             <Route path="/dyeing-material" element={<DyeingMaterialForm />} />
@@ -66,6 +252,10 @@ export default function App() {
             <Route path="/parta" element={<Parta />} />
             <Route path="/fabric-receiving-history" element={<FabricReceivingHistoryPage />} />
             <Route path="/recommendation" element={<Recommandation />} />
+            <Route path="/old-inventory" element={<OldInventory />} />
+            <Route path="/job-orders" element={<JobOrder />} />
+            <Route path="/fabric-stock" element={<FabricStockMtr />} />
+            <Route path="/reports/daily-inventory/quantity-wise" element={<DailyInventoryQuantity />} />
             {user?.role !== 'Admin' && (
               <Route path="/parta-pending" element={<PartaPendingPage />} />
             )}
@@ -79,7 +269,7 @@ export default function App() {
                 <Route path="/settings" element={<SettingsPage darkMode={darkMode} toggleDark={toggleDark} />} />
               </>
             )}
-            <Route path="*" element={<Navigate to="/materials" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>
       ) : (
@@ -92,6 +282,7 @@ export default function App() {
         </Routes>
       )}
     </BrowserRouter>
+  </>
   );
 }
 

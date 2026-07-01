@@ -5,6 +5,61 @@ import '../Design/FabricIssued.css';
 
 import { BASE_URL } from '../store.js';
 
+// Load jsPDF lazily to avoid bundle-time resolution issues
+async function loadJsPDF() {
+  const mod = await import('jspdf');
+  return mod.jsPDF || mod.default;
+}
+
+// ── Image helpers (used for PDF garment image) ───────────────────────────────
+function extractDriveFileId(url) {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/file\/d\/([^/]+)/) || u.search.match(/[?&]id=([^&]+)/);
+    return m ? m[1] : '';
+  } catch { return ''; }
+}
+function driveUcUrl(fileId) {
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+}
+async function loadImageAsBase64ForPdf(url, opts = {}) {
+  return new Promise((resolve) => {
+    try {
+      const fileId = extractDriveFileId(url);
+      const direct = fileId ? driveUcUrl(fileId) : (url || '').toString().trim();
+      if (!direct) return resolve('');
+      const clean = direct.replace(/^https?:\/\//, '');
+      const proxied = `https://images.weserv.nl/?url=${encodeURIComponent(clean)}`;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const maxW = opts.maxWidth || 400;
+          const maxH = opts.maxHeight || 400;
+          let { width, height } = img;
+          if (width > maxW || height > maxH) {
+            const r = Math.min(maxW / width, maxH / height);
+            width = Math.max(1, Math.floor(width * r));
+            height = Math.max(1, Math.floor(height * r));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => {
+            if (!blob) return resolve('');
+            const fr = new FileReader();
+            fr.onloadend = () => resolve(fr.result || '');
+            fr.readAsDataURL(blob);
+          }, 'image/jpeg', 0.7);
+        } catch { resolve(''); }
+      };
+      img.onerror = () => resolve('');
+      img.src = proxied;
+    } catch { resolve(''); }
+  });
+}
+
+
 const FabricIssued = () => {
   const navigate = useNavigate();
   const [data, setData] = useState([]);
@@ -43,6 +98,17 @@ const FabricIssued = () => {
   const [searchRollError, setSearchRollError] = useState(null);
   const [fabricApprovals, setFabricApprovals] = useState({});
   const [defaultApproverName, setDefaultApproverName] = useState('');
+
+  // Matching flow states (global — checked once per lot search)
+  const [matchingModal, setMatchingModal] = useState(null); // { step: 'ask_matching' | 'ask_passed' | 'ask_approver' }
+  const [lotScanningAllowed, setLotScanningAllowed] = useState(null); // null=not checked, true=allowed, false=blocked
+  const [lotMatchingStatus, setLotMatchingStatus] = useState(null); // 'no_matching' | 'passed' | 'failed' | null
+  const [matchingPassedBy, setMatchingPassedBy] = useState('');
+  const [shadeTableNumbers, setShadeTableNumbers] = useState({});
+  const [defaultTable, setDefaultTable] = useState('Table 1');
+
+  // Kharcha (accessories/expense) issuance
+  const [kharchaItems, setKharchaItems] = useState([{ id: Date.now(), item: '', weight: '' }]);
 
   const barcodeInputRef = useRef(null);
   const scanTimeoutRef = useRef(null);
@@ -243,10 +309,25 @@ const FabricIssued = () => {
         setScannedBarcodes({});
         setFabricApprovals({});
         setDefaultApproverName('');
+        setMatchingModal(null);
+        setLotScanningAllowed(null);
+        setLotMatchingStatus(null);
+        setMatchingPassedBy('');
+        // Auto-assign all shades to the default table
+        const initialTables = {};
+        const allShades = getShadesWithIds(found['Shade']);
+        allShades.forEach(s => {
+          initialTables[s.id] = defaultTable || 'Table 1';
+        });
+        setShadeTableNumbers(initialTables);
+        setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
         // Reset pagination when loading new lot
         setHistoryPage(1);
         setHasMoreHistory(true);
         loadIssueHistoryPaginated(found['Lot Number'], 1, true);
+
+        // Open the matching check modal immediately after lot is found
+        setTimeout(() => setMatchingModal({ step: 'ask_matching' }), 400);
 
         // Fetch prior approvals for this lot from database
         try {
@@ -273,6 +354,18 @@ const FabricIssued = () => {
       alert(err.message || 'Lot Number not found');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDefaultTableChange = (val) => {
+    setDefaultTable(val);
+    if (selectedJob) {
+      const updated = { ...shadeTableNumbers };
+      const allShades = getShadesWithIds(selectedJob['Shade']);
+      allShades.forEach(s => {
+        updated[s.id] = val;
+      });
+      setShadeTableNumbers(updated);
     }
   };
 
@@ -514,10 +607,29 @@ const FabricIssued = () => {
     }
   };
 
+  // ── Kharcha handlers ───────────────────────────────────────────────
+  const addKharchaRow = () => {
+    setKharchaItems(prev => [...prev, { id: Date.now(), item: '', weight: '' }]);
+  };
+
+  const removeKharchaRow = (id) => {
+    setKharchaItems(prev => prev.length > 1 ? prev.filter(r => r.id !== id) : prev);
+  };
+
+  const updateKharchaRow = (id, field, value) => {
+    setKharchaItems(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+  };
+
+  const getTotalKharchaWeight = () => {
+    return kharchaItems.reduce((sum, r) => sum + (parseFloat(r.weight) || 0), 0);
+  };
+
   const toggleShadeSelection = (shadeId) => {
     if (selectedShades[shadeId]) {
+      // Deselect
       setSelectedShades({});
     } else {
+      // Select
       const newSelection = {};
       newSelection[shadeId] = true;
       setSelectedShades(newSelection);
@@ -527,8 +639,9 @@ const FabricIssued = () => {
   const selectFirstShade = () => {
     const allShadesWithIds = getShadesWithIds(selectedJob['Shade']);
     if (allShadesWithIds.length > 0) {
+      const firstId = allShadesWithIds[0].id;
       const newSelection = {};
-      newSelection[allShadesWithIds[0].id] = true;
+      newSelection[firstId] = true;
       setSelectedShades(newSelection);
       console.log('Selected first shade entry:', allShadesWithIds[0].name, '(Entry 1)');
     }
@@ -536,6 +649,50 @@ const FabricIssued = () => {
 
   const deselectAllShades = () => {
     setSelectedShades({});
+  };
+
+  // Handle matching modal responses (global — one check per lot)
+  const handleMatchingResponse = (hasMatching) => {
+    if (!matchingModal) return;
+    if (!hasMatching) {
+      // No matching needed — allow scanning directly
+      setLotScanningAllowed(true);
+      setLotMatchingStatus('no_matching');
+      setMatchingPassedBy('');
+      setMatchingModal(null);
+      setTimeout(() => barcodeInputRef.current?.focus(), 100);
+    } else {
+      // Ask if matching passed
+      setMatchingModal({ step: 'ask_passed' });
+    }
+  };
+
+  const handleMatchingPassedResponse = (passed) => {
+    if (!matchingModal) return;
+    if (passed) {
+      // Ask from whom in senior management the matching was passed
+      setMatchingModal({ step: 'ask_approver' });
+    } else {
+      // Matching failed — block all scanning
+      setLotScanningAllowed(false);
+      setLotMatchingStatus('failed');
+      setMatchingPassedBy('');
+      setMatchingModal(null);
+      alert('⛔ Matching Failed! Barcode scanning is not allowed for this lot.');
+    }
+  };
+
+  const handleMatchingApproverSubmit = (approverName) => {
+    if (!approverName || !approverName.trim()) {
+      alert("Please enter the name of the senior management person.");
+      return;
+    }
+    const cleanName = approverName.trim();
+    setMatchingPassedBy(cleanName);
+    setLotScanningAllowed(true);
+    setLotMatchingStatus('passed');
+    setMatchingModal(null);
+    setTimeout(() => barcodeInputRef.current?.focus(), 100);
   };
 
   const processBarcode = async (barcodeData) => {
@@ -548,6 +705,18 @@ const FabricIssued = () => {
     const selectedShadeIds = Object.keys(selectedShades).filter(shadeId => selectedShades[shadeId]);
     if (selectedShadeIds.length === 0) {
       alert('Please select a shade entry before scanning');
+      setBarcodeInput('');
+      return;
+    }
+
+    // Check if scanning is allowed globally for this lot
+    if (lotScanningAllowed === false) {
+      alert('⛔ Scanning not allowed — matching was not passed for this lot.');
+      setBarcodeInput('');
+      return;
+    }
+    if (lotScanningAllowed === null) {
+      alert('⚠️ Please complete the matching check before scanning.');
       setBarcodeInput('');
       return;
     }
@@ -713,6 +882,13 @@ const FabricIssued = () => {
     }
     newScannedBarcodes[`${selectedShadeId}_party`][barcodeId] = partyName;
 
+    // Store location for this barcode
+    const rollLocation = matchingRoll['Location'] || '';
+    if (!newScannedBarcodes[`${selectedShadeId}_location`]) {
+      newScannedBarcodes[`${selectedShadeId}_location`] = {};
+    }
+    newScannedBarcodes[`${selectedShadeId}_location`][barcodeId] = rollLocation;
+
     newScannedBarcodes[selectedShadeId].push(barcodeId);
 
     setIssueWeight(newIssueWeight);
@@ -726,6 +902,7 @@ const FabricIssued = () => {
       shadeEntry: selectedShadeEntryNum,
       weight: finalWeight,
       party: partyName,
+      location: matchingRoll['Location'] || '',
       timestamp: new Date().toLocaleTimeString()
     });
 
@@ -796,6 +973,382 @@ const FabricIssued = () => {
     }
   };
 
+  // ─── PDF Export: Fabric Issuance Report (Premium B&W) ────────────────────
+  const exportFabricIssuancePdf = async ({
+    selectedJob,
+    issuedItems,
+    allBarcodeIds,
+    barcodeLocationMap,
+    scannedBarcodes,
+    issuedShadeIds,
+    allShadesWithIds,
+    issuedBy,
+    issuanceId,
+    kharchaItems
+  }) => {
+    const JsPDF = await loadJsPDF();
+
+    // ── Dimensions & constants ─────────────────────────────────────────────
+    const pW = 210, pH = 297, mg = 10, cW = pW - mg * 2;
+    const now = new Date();
+    const fmtDate = now.toLocaleDateString('en-GB');
+    const fmtTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const lotNo = selectedJob['Lot Number'] || '—';
+
+    // ── Optional garment image ──────────────────────────────────────────────
+    let base64Img = '';
+    const imgUrl = selectedJob['Image URL'] || '';
+    if (imgUrl) {
+      try { base64Img = await loadImageAsBase64ForPdf(imgUrl, { maxWidth: 300, maxHeight: 300 }); }
+      catch { base64Img = ''; }
+    }
+
+    const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    // Helper: thin rule
+    const rule = (yy, lw = 0.2, r = 0, g = 0, b = 0) => {
+      doc.setDrawColor(r, g, b); doc.setLineWidth(lw);
+      doc.line(mg, yy, mg + cW, yy);
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PAGE GENERATION (called for each page)
+    // ═══════════════════════════════════════════════════════════════════════
+    const drawPageContent = (isFirstPage) => {
+      // ── Border frame ────────────────────────────────────────────────────
+      doc.setDrawColor(0); doc.setLineWidth(0.6);
+      doc.rect(mg - 2, 6, cW + 4, pH - 12);
+
+      if (isFirstPage) {
+        // ── Company / Report title block ─────────────────────────────────
+        doc.setFillColor(255); doc.setDrawColor(0); doc.setLineWidth(0.6);
+        doc.rect(mg - 2, 6, cW + 4, 22, 'FD');
+
+        // Double line below header
+        doc.setLineWidth(0.3);
+        doc.line(mg - 2, 28, mg + cW + 2, 28);
+
+        doc.setTextColor(0);
+        doc.setFontSize(15); doc.setFont('helvetica', 'bold');
+        doc.text('FABRIC ISSUANCE WITH ROLL LOCATION', mg + 2, 16);
+
+        doc.setFontSize(7); doc.setFont('helvetica', 'normal');
+        doc.text('TEXTILE WAREHOUSE MANAGEMENT SYSTEM  |  TWMS', mg + 2, 23);
+
+        // Right side: meta
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
+        doc.text(`${fmtDate}  ${fmtTime}`, pW - mg, 16, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        if (issuanceId) doc.text(`ID: ${issuanceId}`, pW - mg, 23, { align: 'right' });
+      } else {
+        // Continuation header — white with border
+        doc.setFillColor(255); doc.setDrawColor(0); doc.setLineWidth(0.4);
+        doc.rect(mg - 2, 6, cW + 4, 10, 'FD');
+        doc.setTextColor(0); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
+        doc.text('FABRIC ISSUANCE REPORT  (continued)', mg + 2, 13);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Lot: ${lotNo}  |  ${fmtDate}`, pW - mg, 13, { align: 'right' });
+      }
+
+      // Reset text color
+      doc.setTextColor(0);
+    };
+
+    drawPageContent(true);
+    let y = 32; // start y after header
+
+    // ── JOB ORDER DETAILS + optional image ─────────────────────────────────
+    const IMG_W = 30, IMG_H = 30;
+    const hasImg = !!base64Img;
+    const jobColW = hasImg ? cW - IMG_W - 4 : cW;
+
+    // Section label
+    doc.setFontSize(7); doc.setFont('helvetica', 'bold');
+    doc.setTextColor(80);
+    doc.text('JOB ORDER DETAILS', mg, y);
+    doc.setTextColor(0);
+    y += 1.5;
+    rule(y, 0.3);
+    y += 3;
+
+    // Two-column job fields
+    const jobFields = [
+      ['Job Order No', selectedJob['Job Order No'] || '—'],
+      ['Lot Number', selectedJob['Lot Number'] || '—'],
+      ['Fabric', selectedJob['Fabric'] || '—'],
+      ['Brand', selectedJob['Brand'] || '—'],
+      ['Shade', selectedJob['Shade'] || '—'],
+      ['Quantity', `${selectedJob['Quantity'] || '—'} ${selectedJob['Unit'] || ''}`],
+      ['Size', selectedJob['Size'] || '—'],
+      ['Season', selectedJob['Season'] || '—'],
+      ['Garment Type', selectedJob['Garment Type'] || '—'],
+      ['Issued By', issuedBy],
+    ];
+
+    const jcW = jobColW / 2 - 2;
+    doc.setFontSize(7.5);
+    const rowH = 5.8;
+    jobFields.forEach(([lbl, val], i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const jx = mg + col * (jcW + 4);
+      const jy = y + row * rowH;
+      doc.setFont('helvetica', 'bold'); doc.text(`${lbl}:`, jx, jy);
+      doc.setFont('helvetica', 'normal');
+      const maxLen = Math.floor(jcW / 1.8);
+      const display = String(val).length > maxLen ? String(val).substring(0, maxLen - 1) + '…' : String(val);
+      doc.text(display, jx + 26, jy);
+    });
+
+    // Draw image on the right if present
+    if (hasImg) {
+      const imgX = mg + jobColW + 4;
+      try {
+        doc.setDrawColor(0); doc.setLineWidth(0.3);
+        doc.rect(imgX, y - 1, IMG_W, IMG_H + 2);
+        doc.addImage(base64Img, 'JPEG', imgX + 0.5, y - 0.5, IMG_W - 1, IMG_H);
+      } catch { /* ignore image draw error */ }
+    }
+
+    const jobBlockH = Math.ceil(jobFields.length / 2) * rowH;
+    y += Math.max(jobBlockH, hasImg ? IMG_H + 4 : 0) + 3;
+
+
+    const totalRolls = issuedItems.reduce((s, it) => s + (parseInt(it.qty) || 0), 0);
+    const totalWeight = issuedItems.reduce((s, it) => s + (parseFloat(it.weight) || 0), 0);
+
+    doc.setFillColor(240); doc.rect(mg, y, cW, 10, 'F');
+    doc.setDrawColor(0); doc.setLineWidth(0.3); doc.rect(mg, y, cW, 10);
+
+    const chips = [
+      ['TOTAL ROLLS', String(totalRolls)],
+      ['TOTAL WEIGHT', `${totalWeight.toFixed(2)} kg`],
+      ['BARCODES', String(allBarcodeIds.length)],
+      ['LOT NUMBER', lotNo],
+      ['DATE', fmtDate],
+    ];
+    const chipW = cW / chips.length;
+    chips.forEach(([lbl, val], i) => {
+      const cx = mg + i * chipW + chipW / 2;
+      doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
+      doc.text(lbl, cx, y + 3.5, { align: 'center' });
+      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+      doc.text(val, cx, y + 8.5, { align: 'center' });
+    });
+    y += 14;
+
+    const rowHt = 5.2;
+    const headerHt = 6;
+
+    // Collect all rows
+    const allRows = [];
+    issuedShadeIds.forEach(shadeId => {
+      const shadeObj = allShadesWithIds.find(s => s.id === shadeId);
+      const shadeName = shadeObj ? shadeObj.name : shadeId;
+      const barcodes = scannedBarcodes[shadeId] || [];
+      const locMap = scannedBarcodes[`${shadeId}_location`] || {};
+      const wpp = barcodes.length > 0 ? (issueWeight[shadeId] || 0) / barcodes.length : 0;
+      
+      const itemRecord = issuedItems.find(it => it.id === shadeId);
+      const tableNum = itemRecord ? itemRecord.tableNumber : '';
+      const tableShort = tableNum.replace('Table ', 'T');
+      const shadeDisplay = tableShort ? `${shadeName.substring(0, 8)} (${tableShort})` : shadeName.substring(0, 11);
+
+      barcodes.forEach(bc => {
+        allRows.push({
+          bc,
+          shade: shadeDisplay,
+          wt: wpp.toFixed(2),
+          loc: barcodeLocationMap[bc] || locMap[bc] || '—',
+          lot: lotNo,
+        });
+      });
+    });
+
+    const pageBottom = pH - 18;
+
+    if (allRows.length > 0) {
+      // ── Barcode Table ────────────────────────────────────────────────────────
+      doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(80);
+      doc.text('ISSUED FABRIC ROLLS', mg, y);
+      doc.setTextColor(0);
+      y += 1.5; rule(y, 0.3); y += 3;
+
+      // 2-column layout: each column has its own mini-table
+      // Columns: # | Barcode | Shade | Wt | Location
+      const NUM_COLS = 2;
+      const tableW = (cW - 4) / NUM_COLS;  // 4mm gap between cols
+      const colDefs = [
+        { lbl: '#', w: 7 },
+        { lbl: 'Barcode ID', w: 32 },
+        { lbl: 'Shade', w: 25 },
+        { lbl: 'Wt(kg)', w: 14 },
+        { lbl: 'Location', w: tableW - 7 - 32 - 25 - 14 },
+      ];
+
+      const drawTableHeader = (startX) => {
+        doc.setFillColor(230); doc.setDrawColor(0); doc.setLineWidth(0.25);
+        doc.rect(startX, y, tableW, headerHt, 'FD');
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+        let cx = startX + 1;
+        colDefs.forEach(cd => { doc.text(cd.lbl, cx, y + 4.2); cx += cd.w; });
+      };
+
+      // Draw both column headers
+      drawTableHeader(mg);
+      drawTableHeader(mg + tableW + 4);
+      y += headerHt;
+
+      // Split into two halves
+      const half = Math.ceil(allRows.length / 2);
+      const leftRows = allRows.slice(0, half);
+      const rightRows = allRows.slice(half);
+
+      const drawCell = (x, y, row, idx, side) => {
+        const isEven = idx % 2 === 0;
+        if (isEven) { doc.setFillColor(248); doc.rect(x, y, tableW, rowHt, 'F'); }
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(0);
+
+        const vals = [String(idx + 1 + (side === 'right' ? half : 0)), row.bc, row.shade, row.wt, row.loc];
+        let cx = x + 1;
+        colDefs.forEach((cd, ci) => {
+          if (ci === 4 && row.loc && row.loc !== '—') {
+            // Location cell: bold
+            doc.setFont('helvetica', 'bold');
+            doc.text(vals[ci].substring(0, 10), cx, y + 3.8);
+            doc.setFont('helvetica', 'normal');
+          } else {
+            doc.text(vals[ci].substring(0, Math.floor(cd.w / 1.4)), cx, y + 3.8);
+          }
+          cx += cd.w;
+        });
+
+        // Bottom rule
+        doc.setDrawColor(220); doc.setLineWidth(0.1);
+        doc.line(x, y + rowHt, x + tableW, y + rowHt);
+        doc.setDrawColor(0);
+      };
+
+      const maxTableRows = Math.max(leftRows.length, rightRows.length);
+      let rowsOnPage = 0;
+      let ri = 0;
+
+      while (ri < maxTableRows) {
+        // Check if we need a new page
+        if (y + rowHt > pageBottom) {
+          // Footer on current page
+          doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
+          doc.text(`TWMS Fabric Issuance · ${fmtDate}`, mg, pH - 8);
+          doc.text(`Page ${doc.internal.getCurrentPageInfo().pageNumber}`, pW - mg, pH - 8, { align: 'right' });
+
+          doc.addPage();
+          drawPageContent(false);
+          y = 20;
+          rowsOnPage = 0;
+
+          // Redraw headers on new page
+          drawTableHeader(mg);
+          drawTableHeader(mg + tableW + 4);
+          y += headerHt;
+        }
+
+        // Draw left cell
+        if (ri < leftRows.length) drawCell(mg, y, leftRows[ri], ri, 'left');
+        // Draw right cell
+        if (ri < rightRows.length) drawCell(mg + tableW + 4, y, rightRows[ri], ri, 'right');
+
+        // Vertical divider between columns
+        doc.setDrawColor(200); doc.setLineWidth(0.15);
+        doc.line(mg + tableW + 2, y, mg + tableW + 2, y + rowHt);
+        doc.setDrawColor(0);
+
+        y += rowHt;
+        ri++;
+        rowsOnPage++;
+      }
+
+      // ── Footer totals bar ──────────────────────────────────────────────────
+      y += 2;
+      doc.setDrawColor(0); doc.setLineWidth(0.4);
+      doc.setFillColor(230); doc.rect(mg, y, cW, 7, 'FD');
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+      doc.text(
+        `TOTAL: ${totalRolls} roll(s)   ${totalWeight.toFixed(2)} kg   ${allBarcodeIds.length} barcode(s)   Lot: ${lotNo}`,
+        mg + 3, y + 5
+      );
+    }
+
+    // ── Kharcha items in PDF ──────────────────────────────────────────────
+    const validKharcha = kharchaItems ? kharchaItems.filter(k => k.item.trim() !== '' || k.weight !== '') : [];
+    if (validKharcha.length > 0) {
+      y += 12;
+      if (y + 15 > pageBottom) {
+        doc.addPage();
+        drawPageContent(false);
+        y = 20;
+      }
+      doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(80);
+      doc.text('ISSUED KHARCHA (ACCESSORIES / EXPENSE)', mg, y);
+      doc.setTextColor(0);
+      y += 1.5;
+      rule(y, 0.3);
+      y += 3;
+
+      // Draw table header
+      doc.setFillColor(230); doc.setDrawColor(0); doc.setLineWidth(0.25);
+      doc.rect(mg, y, cW, headerHt, 'FD');
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+      doc.text('#', mg + 2, y + 4.2);
+      doc.text('Item Name', mg + 15, y + 4.2);
+      doc.text('Weight (kg)', mg + 120, y + 4.2);
+      y += headerHt;
+
+      validKharcha.forEach((kh, kIdx) => {
+        if (y + rowHt > pageBottom) {
+          doc.addPage();
+          drawPageContent(false);
+          y = 20;
+          // Redraw header
+          doc.setFillColor(230); doc.setDrawColor(0); doc.setLineWidth(0.25);
+          doc.rect(mg, y, cW, headerHt, 'FD');
+          doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+          doc.text('#', mg + 2, y + 4.2);
+          doc.text('Item Name', mg + 15, y + 4.2);
+          doc.text('Weight (kg)', mg + 120, y + 4.2);
+          y += headerHt;
+        }
+
+        const isEven = kIdx % 2 === 0;
+        if (isEven) { doc.setFillColor(248); doc.rect(mg, y, cW, rowHt, 'F'); }
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(0);
+        doc.text(String(kIdx + 1), mg + 2, y + 3.8);
+        doc.text(kh.item, mg + 15, y + 3.8);
+        doc.text(`${parseFloat(kh.weight || 0).toFixed(2)} kg`, mg + 120, y + 3.8);
+
+        doc.setDrawColor(220); doc.setLineWidth(0.1);
+        doc.line(mg, y + rowHt, mg + cW, y + rowHt);
+        doc.setDrawColor(0);
+        y += rowHt;
+      });
+    }
+
+    // ── Page footer on all pages ────────────────────────────────────────────
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
+      doc.text(`TWMS Fabric Issuance Report · ${fmtDate} · Issued by: ${issuedBy}`, mg, pH - 8);
+      doc.text(`Page ${p} of ${totalPages}`, pW - mg, pH - 8, { align: 'right' });
+      // Outer border bottom line
+      doc.setDrawColor(0); doc.setLineWidth(0.6);
+      doc.line(mg - 2, pH - 6, mg + cW + 2, pH - 6);
+    }
+
+    const fileName = `FabricIssuance_${lotNo}_${now.toISOString().slice(0, 10)}.pdf`;
+    doc.save(fileName);
+  };
+
+
   const handleIssueFabric = async () => {
     if (!selectedJob) return;
 
@@ -805,9 +1358,29 @@ const FabricIssued = () => {
       return;
     }
 
+    const allShadesWithIds = getShadesWithIds(selectedJob['Shade']);
+
+    // Validate that table numbers are selected for all issued shades
+    for (const shadeId of issuedShadeIds) {
+      if (!shadeTableNumbers[shadeId]) {
+        const shadeObj = allShadesWithIds.find(s => s.id === shadeId);
+        const shadeName = shadeObj ? shadeObj.name : shadeId;
+        alert(`❌ Please select a Table Number for shade: ${shadeName}`);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
-    const allShadesWithIds = getShadesWithIds(selectedJob['Shade']);
+    // Build per-barcode location map for PDF
+    const barcodeLocationMap = {};
+    issuedShadeIds.forEach(shadeId => {
+      const barcodes = scannedBarcodes[shadeId] || [];
+      const locationMap = scannedBarcodes[`${shadeId}_location`] || {};
+      barcodes.forEach(bc => {
+        barcodeLocationMap[bc] = locationMap[bc] || '';
+      });
+    });
 
     const issuedItems = issuedShadeIds.map(shadeId => {
       const shadeObj = allShadesWithIds.find(s => s.id === shadeId);
@@ -817,7 +1390,8 @@ const FabricIssued = () => {
         shadeEntry: shadeObj ? shadeObj.originalIndex + 1 : 1,
         qty: issueQuantity[shadeId],
         weight: issueWeight[shadeId] || 0,
-        barcodeIds: scannedBarcodes[shadeId] || []
+        barcodeIds: scannedBarcodes[shadeId] || [],
+        tableNumber: shadeTableNumbers[shadeId] || ''
       };
     });
 
@@ -828,6 +1402,8 @@ const FabricIssued = () => {
     const approvalsList = allBarcodeIds
       .map(id => fabricApprovals[id])
       .filter(Boolean);
+
+    const validKharchaItems = kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '');
 
     const issuanceRecord = {
       lotNumber: selectedJob['Lot Number'],
@@ -844,7 +1420,8 @@ const FabricIssued = () => {
       barcodeIds: allBarcodeIds,
       remarks: `Issued ${issuedShadeIds.length} shade types, Total ${totalQuantity} rolls. Barcodes: ${allBarcodeIds.join(', ')}`,
       jobDetails: selectedJob,
-      fabricChangeApprovals: approvalsList
+      fabricChangeApprovals: approvalsList,
+      kharchaItems: validKharchaItems
     };
 
     console.log('📦 Issuance Record with Barcodes:', issuanceRecord);
@@ -852,6 +1429,26 @@ const FabricIssued = () => {
     const result = await storeIssuanceInGoogleSheets(issuanceRecord);
 
     if (result.success) {
+      // --- Generate and download PDF report (Removed while submitting by user request) ---
+      /*
+      try {
+        await exportFabricIssuancePdf({
+          selectedJob,
+          issuedItems,
+          allBarcodeIds,
+          barcodeLocationMap,
+          scannedBarcodes,
+          issuedShadeIds,
+          allShadesWithIds,
+          issuedBy: getDisplayName(),
+          issuanceId: result.data?.issuanceId,
+          kharchaItems: validKharchaItems
+        });
+      } catch (pdfErr) {
+        console.error('PDF generation error:', pdfErr);
+      }
+      */
+
       const updatedGlobalSet = new Set(globalIssuedBarcodes);
       allBarcodeIds.forEach(id => updatedGlobalSet.add(id));
       setGlobalIssuedBarcodes(updatedGlobalSet);
@@ -882,6 +1479,8 @@ const FabricIssued = () => {
       setScannedBarcodes({});
       setFabricApprovals({});
       setDefaultApproverName('');
+      setMatchingPassedBy('');
+      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
 
       // Reset pagination and reload history
       setHistoryPage(1);
@@ -921,6 +1520,111 @@ const FabricIssued = () => {
       setScannedBarcodes({});
       setFabricApprovals({});
       setDefaultApproverName('');
+      setMatchingPassedBy('');
+      setShadeTableNumbers({});
+      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
+    }
+
+    setIsSubmitting(false);
+  };
+
+  const handleIssueKharcha = async () => {
+    if (!selectedJob) return;
+
+    const validKharchaItems = kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '');
+    if (validKharchaItems.length === 0) {
+      alert('Please fill in at least one Kharcha item with Name or Weight');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const issuanceRecord = {
+      lotNumber: selectedJob['Lot Number'],
+      jobOrderNo: selectedJob['Job Order No'],
+      fabric: selectedJob['Fabric'],
+      brand: selectedJob['Brand'],
+      issuedItems: [],
+      totalQuantity: 0,
+      totalWeight: 0,
+      issuedBy: getDisplayName(),
+      department: loggedInUser?.department || 'Production',
+      issuedAt: new Date().toISOString(),
+      status: 'completed',
+      barcodeIds: [],
+      remarks: `Issued Kharcha: ${validKharchaItems.map(k => `${k.item} (${k.weight} kg)`).join(', ')}`,
+      jobDetails: selectedJob,
+      fabricChangeApprovals: [],
+      kharchaItems: validKharchaItems
+    };
+
+    console.log('📦 Issuance Record for Kharcha:', issuanceRecord);
+
+    const result = await storeIssuanceInGoogleSheets(issuanceRecord);
+
+    if (result.success) {
+      // --- Generate and download PDF report for Kharcha (Removed while submitting by user request) ---
+      /*
+      try {
+        await exportFabricIssuancePdf({
+          selectedJob,
+          issuedItems: [],
+          allBarcodeIds: [],
+          barcodeLocationMap: {},
+          scannedBarcodes: {},
+          issuedShadeIds: [],
+          allShadesWithIds: [],
+          issuedBy: getDisplayName(),
+          issuanceId: result.data?.issuanceId,
+          kharchaItems: validKharchaItems
+        });
+      } catch (pdfErr) {
+        console.error('PDF generation error:', pdfErr);
+      }
+      */
+
+      const newIssueRecord = {
+        id: Date.now(),
+        issuanceId: result.data?.issuanceId,
+        ...issuanceRecord,
+        items: []
+      };
+
+      // Add to history (prepend)
+      const updatedHistory = [newIssueRecord, ...issueHistory];
+      setIssueHistory(updatedHistory);
+      localStorage.setItem(`fabric_issue_${selectedJob['Lot Number']}`, JSON.stringify(updatedHistory));
+
+      alert(`✅ Kharcha Issued Successfully!\n\n💰 Stored ${validKharchaItems.length} accessories/expense item(s) to Google Sheets`);
+      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
+
+      // Reset pagination and reload history
+      setHistoryPage(1);
+      setHasMoreHistory(true);
+      loadIssueHistoryPaginated(selectedJob['Lot Number'], 1, true);
+    } else {
+      const offlineRecord = {
+        ...issuanceRecord,
+        offlineSavedAt: new Date().toISOString()
+      };
+
+      const offlineData = JSON.parse(localStorage.getItem('offlineFabricIssuances') || '[]');
+      offlineData.push(offlineRecord);
+      localStorage.setItem('offlineFabricIssuances', JSON.stringify(offlineData));
+
+      alert(`⚠️ Kharcha recorded but saved offline.\n\nData will sync when connection is restored.`);
+
+      const newIssueRecord = {
+        id: Date.now(),
+        ...issuanceRecord,
+        offline: true
+      };
+
+      const updatedHistory = [newIssueRecord, ...issueHistory];
+      setIssueHistory(updatedHistory);
+      localStorage.setItem(`fabric_issue_${selectedJob['Lot Number']}`, JSON.stringify(updatedHistory));
+
+      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
     }
 
     setIsSubmitting(false);
@@ -994,16 +1698,30 @@ const FabricIssued = () => {
     <div className="fabric-issued-container">
 
       <div className="hero-section">
-        <div className="hero-content">
-          <h1>Fabric Issuance Portal</h1>
-          <p>Search by Lot Number to issue fabric against job orders</p>
-          {!selectedJob && (
-            <div className="hero-search">
+        <div className="hero-content hero-content--compact">
+
+          {/* Left: Back button */}
+          <button
+            onClick={() => window.history.back()}
+            className="hero-back-btn"
+          >
+            ← Back
+          </button>
+
+          {/* Center: Title */}
+          <div className="hero-title-group">
+            <h1>Fabric Issuance Portal</h1>
+            <p>Issue fabric against job orders</p>
+          </div>
+
+          {/* Right: Search (only when no job selected) */}
+          {!selectedJob ? (
+            <div className="hero-search hero-search--inline">
               <div className="search-wrapper">
                 <span className="search-icon">🔍</span>
                 <input
                   type="text"
-                  placeholder="Enter Lot Number (e.g., 11028)"
+                  placeholder="Enter Lot Number..."
                   value={searchLot}
                   onChange={(e) => setSearchLot(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -1011,26 +1729,131 @@ const FabricIssued = () => {
                 />
               </div>
               <button onClick={handleSearch} className="hero-button">
-                Search Lot
+                Search
               </button>
               <button onClick={fetchSheetData} className="hero-button secondary">
-                Refresh Data
+                🔄
               </button>
             </div>
+          ) : (
+            <div className="hero-lot-badge">
+              <span style={{ fontSize: '11px', opacity: 0.75 }}>Current Lot</span>
+              <span style={{ fontSize: '16px', fontWeight: '800', letterSpacing: '0.5px' }}>{selectedJob['Lot Number']}</span>
+            </div>
           )}
+
         </div>
       </div>
 
       {selectedJob ? (
         <div className="dashboard">
+
+          {/* ── Global Matching Status Banner ─────────────────────────── */}
+          {lotMatchingStatus ? (
+            <div style={{
+              borderRadius: '14px',
+              marginBottom: '18px',
+              overflow: 'hidden',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+                padding: '16px 22px',
+                background:
+                  lotMatchingStatus === 'no_matching' ? 'linear-gradient(135deg,#059669,#10b981)'
+                    : lotMatchingStatus === 'passed' ? 'linear-gradient(135deg,#1d4ed8,#3b82f6)'
+                      : 'linear-gradient(135deg,#dc2626,#ef4444)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '28px' }}>
+                    {lotMatchingStatus === 'no_matching' ? '✅'
+                      : lotMatchingStatus === 'passed' ? '🔵'
+                        : '❌'}
+                  </span>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: '600', color: 'rgba(255,255,255,0.75)', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                      Matching Status — Lot {selectedJob['Lot Number']}
+                    </div>
+                    <div style={{ fontSize: '16px', fontWeight: '800', color: '#fff', marginTop: '2px' }}>
+                      {lotMatchingStatus === 'no_matching' ? 'No Matching Required — Scanning Allowed'
+                        : lotMatchingStatus === 'passed' ? `Matching Passed ✔ — Scanning Allowed (Approved by: ${matchingPassedBy})`
+                          : 'Matching Failed ✘ — Scanning Blocked'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setMatchingModal({ step: 'ask_matching' })}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.4)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.35)'}
+                  onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                >
+                  🔄 Re-check Matching
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              borderRadius: '14px',
+              marginBottom: '18px',
+              padding: '14px 22px',
+              background: 'rgba(150,150,150,0.08)',
+              border: '1px dashed rgba(150,150,150,0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '22px' }}>⬜</span>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#888', letterSpacing: '1px', textTransform: 'uppercase' }}>Matching Status</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#bbb', marginTop: '2px' }}>Not Checked — Complete matching check to enable scanning</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setMatchingModal({ step: 'ask_matching' })}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(59,130,246,0.35)'
+                }}
+              >
+                🔍 Start Matching Check
+              </button>
+            </div>
+          )}
+
           {/* Previously Issued Summary Panel */}
           {issueHistory.length > 0 && (
             <div style={{
-              background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
+              background: 'linear-gradient(135deg, #5f3dc4 0%, #0b7285 100%)',
               borderRadius: '12px',
               padding: '20px',
               marginBottom: '20px',
-              color: 'white'
+              color: 'white',
+              boxShadow: '0 4px 15px rgba(95, 61, 196, 0.15)'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                 <h3 style={{ margin: 0, fontSize: '18px' }}>📊 Previously Issued Summary for Lot {selectedJob['Lot Number']}</h3>
@@ -1308,6 +2131,32 @@ const FabricIssued = () => {
                 <span className="card-value">{selectedJob['Quantity']} {selectedJob['Unit']}</span>
               </div>
             </div>
+            <div className="summary-card" style={{ display: 'flex', alignItems: 'center' }}>
+              <div className="card-icon">🪑</div>
+              <div className="card-content" style={{ width: '100%' }}>
+                <span className="card-label" style={{ color: '#94a3b8' }}>Default Table</span>
+                <select
+                  value={defaultTable}
+                  onChange={(e) => handleDefaultTableChange(e.target.value)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#facc15',
+                    fontSize: '15px',
+                    fontWeight: '800',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    width: '100%',
+                    padding: 0,
+                    fontFamily: 'inherit'
+                  }}
+                >
+                  {Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => (
+                    <option key={t} value={t} style={{ background: '#1e293b', color: 'white' }}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Shade Selection Toolbar */}
@@ -1452,6 +2301,52 @@ const FabricIssued = () => {
                           </div>
                         </div>
 
+                        {isSelected && (
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                            marginTop: '10px',
+                            padding: '8px 12px',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(255, 255, 255, 0.08)'
+                          }}>
+                            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Assign Table for this shade:</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                              {Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => {
+                                const isTableSelected = shadeTableNumbers[shadeId] === t;
+                                return (
+                                  <button
+                                    key={t}
+                                    type="button"
+                                    onClick={() => {
+                                      setShadeTableNumbers(prev => ({
+                                        ...prev,
+                                        [shadeId]: t
+                                      }));
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      background: isTableSelected ? 'linear-gradient(135deg, #0ca678, #059669)' : 'rgba(255,255,255,0.06)',
+                                      color: isTableSelected ? 'white' : '#cbd5e1',
+                                      border: isTableSelected ? 'none' : '1px solid rgba(255,255,255,0.15)',
+                                      borderRadius: '6px',
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      cursor: 'pointer',
+                                      boxShadow: isTableSelected ? '0 2px 6px rgba(12,166,120,0.3)' : 'none',
+                                      transition: 'all 0.15s'
+                                    }}
+                                  >
+                                    {t.replace('Table ', 'T')}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                         {wasPreviouslyIssued && previouslyIssued.allBarcodes.length > 0 && (
                           <div style={{ marginTop: '8px', padding: '8px', background: '#fef3c7', borderRadius: '6px' }}>
                             <details>
@@ -1508,6 +2403,238 @@ const FabricIssued = () => {
             </div>
           </div>
 
+          {/* ── Kharcha (Accessories / Expense) Issuance Panel ── */}
+          {selectedJob && (
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              boxShadow: '0 2px 16px rgba(0,0,0,0.08)',
+              marginBottom: '24px',
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0'
+            }}>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 22px',
+                background: 'linear-gradient(135deg, #5f3dc4 0%, #0b7285 100%)',
+                color: '#fff'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>💰</span>
+                  <div>
+                    <div style={{ fontSize: '15px', fontWeight: '800', letterSpacing: '0.2px' }}>Kharcha Issuance</div>
+                    <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '1px' }}>Accessories / Expense items for this lot</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '10px', opacity: 0.75 }}>TOTAL WEIGHT</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800' }}>{getTotalKharchaWeight().toFixed(2)} kg</div>
+                  </div>
+                  <button
+                    onClick={addKharchaRow}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '8px 16px',
+                      background: 'rgba(255,255,255,0.18)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      borderRadius: '9px',
+                      fontSize: '13px', fontWeight: '700',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.28)'}
+                    onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.18)'}
+                  >
+                    + Add Item
+                  </button>
+                </div>
+              </div>
+
+              {/* Table Header */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '40px 1fr 180px 44px',
+                gap: '0',
+                padding: '10px 22px',
+                background: '#f8fafc',
+                borderBottom: '1px solid #e2e8f0',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: '#64748b',
+                letterSpacing: '0.5px',
+                textTransform: 'uppercase'
+              }}>
+                <div>#</div>
+                <div>Item Name</div>
+                <div>Weight (kg)</div>
+                <div></div>
+              </div>
+
+              {/* Rows */}
+              <div style={{ padding: '10px 22px 16px' }}>
+                {kharchaItems.map((row, idx) => (
+                  <div
+                    key={row.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '40px 1fr 180px 44px',
+                      gap: '8px',
+                      alignItems: 'center',
+                      marginBottom: '8px',
+                      padding: '8px 0',
+                      borderBottom: idx < kharchaItems.length - 1 ? '1px solid #f1f5f9' : 'none'
+                    }}
+                  >
+                    {/* # */}
+                    <div style={{
+                      width: '28px', height: '28px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg,#5f3dc4,#7048e8)',
+                      color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '12px', fontWeight: '700'
+                    }}>{idx + 1}</div>
+
+                    {/* Item Name */}
+                    <input
+                      type="text"
+                      placeholder="Enter item name (e.g. Thread, Button, Zip...)"
+                      value={row.item}
+                      onChange={e => updateKharchaRow(row.id, 'item', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 13px',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: '9px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        outline: 'none',
+                        transition: 'border-color 0.2s, box-shadow 0.2s',
+                        background: '#fff',
+                        color: '#1e293b',
+                        boxSizing: 'border-box'
+                      }}
+                      onFocus={e => { e.target.style.borderColor = '#5f3dc4'; e.target.style.boxShadow = '0 0 0 3px rgba(95,61,196,0.12)'; }}
+                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
+                    />
+
+                    {/* Weight */}
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      value={row.weight}
+                      onChange={e => updateKharchaRow(row.id, 'weight', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 13px',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: '9px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        outline: 'none',
+                        transition: 'border-color 0.2s, box-shadow 0.2s',
+                        background: '#fff',
+                        color: '#1e293b',
+                        boxSizing: 'border-box'
+                      }}
+                      onFocus={e => { e.target.style.borderColor = '#5f3dc4'; e.target.style.boxShadow = '0 0 0 3px rgba(95,61,196,0.12)'; }}
+                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
+                    />
+
+                    {/* Remove */}
+                    <button
+                      onClick={() => removeKharchaRow(row.id)}
+                      disabled={kharchaItems.length === 1}
+                      title="Remove row"
+                      style={{
+                        width: '34px', height: '34px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: kharchaItems.length === 1 ? '#f1f5f9' : '#fee2e2',
+                        color: kharchaItems.length === 1 ? '#cbd5e1' : '#ef4444',
+                        fontSize: '16px',
+                        cursor: kharchaItems.length === 1 ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'background 0.2s',
+                        flexShrink: 0
+                      }}
+                      onMouseOver={e => { if (kharchaItems.length > 1) e.currentTarget.style.background = '#fecaca'; }}
+                      onMouseOut={e => { if (kharchaItems.length > 1) e.currentTarget.style.background = '#fee2e2'; }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer summary */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 22px',
+                background: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+                flexWrap: 'wrap',
+                gap: '10px'
+              }}>
+                <div style={{ fontSize: '13px', color: '#64748b' }}>
+                  <span style={{ fontWeight: '700', color: '#5f3dc4' }}>{kharchaItems.filter(r => r.item.trim()).length}</span> item(s) entered
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+                  <div style={{ fontSize: '13px', color: '#64748b' }}>
+                    Total Weight: <span style={{ fontWeight: '800', color: '#1e293b', fontSize: '15px' }}>{getTotalKharchaWeight().toFixed(2)} kg</span>
+                  </div>
+                  <button
+                    onClick={addKharchaRow}
+                    style={{
+                      padding: '7px 14px',
+                      background: 'rgba(255,255,255,0.06)',
+                      color: '#475569', border: '1px solid #e2e8f0', borderRadius: '8px',
+                      fontSize: '12px', fontWeight: '700',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      marginRight: '8px'
+                    }}
+                    onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'}
+                    onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                  >
+                    + Add Row
+                  </button>
+                  <button
+                    onClick={handleIssueKharcha}
+                    disabled={kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '').length === 0 || isSubmitting}
+                    style={{
+                      padding: '7px 16px',
+                      background: 'linear-gradient(135deg,#5f3dc4,#7048e8)',
+                      color: '#fff', border: 'none', borderRadius: '8px',
+                      fontSize: '12px', fontWeight: '700',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(95,61,196,0.3)',
+                      transition: 'all 0.2s',
+                      opacity: kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '').length === 0 || isSubmitting ? 0.6 : 1
+                    }}
+                    onMouseOver={e => {
+                      if (!(kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '').length === 0 || isSubmitting)) {
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }
+                    }}
+                    onMouseOut={e => e.currentTarget.style.transform = 'none'}
+                  >
+                    {isSubmitting ? '⏳ Processing...' : '✓ Issue Kharcha'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* History Section with Infinite Scroll */}
           {issueHistory.length > 0 && (
             <div className="history-section">
@@ -1546,10 +2673,20 @@ const FabricIssued = () => {
                     <div className="history-items">
                       {(record.items || record.issuedItems || []).map((item, i) => (
                         <span key={i} className="history-item-tag">
-                          {item.shade}{item.shadeEntry > 1 && ` (Entry ${item.shadeEntry})`}: {parseInt(item.qty || item.quantity) || 0} rolls ({(parseFloat(item.weight) || 0).toFixed(2)} kg)
+                          {item.shade}{item.shadeEntry > 1 && ` (Entry ${item.shadeEntry})`}: {parseInt(item.qty || item.quantity) || 0} rolls ({(parseFloat(item.weight) || 0).toFixed(2)} kg){item.tableNumber && ` [${item.tableNumber}]`}
                         </span>
                       ))}
                     </div>
+                    {record.kharchaItems && record.kharchaItems.length > 0 && (
+                      <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '0 4px' }}>
+                        <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 'bold', alignSelf: 'center' }}>💰 Kharcha:</span>
+                        {record.kharchaItems.map((k, ki) => (
+                          <span key={ki} className="history-item-tag" style={{ background: 'rgba(253, 230, 138, 0.15)', borderColor: 'rgba(253, 230, 138, 0.3)', color: '#fef08a' }}>
+                            {k.item}: {parseFloat(k.weight || 0).toFixed(2)} kg
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -1591,6 +2728,452 @@ const FabricIssued = () => {
           onReceiveComplete={handleReceiveComplete}
         />
       )}
+
+      {/* ── Matching Flow Modal ─────────────────────────────────────── */}
+      {matchingModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'fadeInModal 0.2s ease'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: '20px',
+            padding: '36px 40px',
+            maxWidth: '440px',
+            width: '90%',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+            textAlign: 'center',
+            animation: 'slideUpModal 0.25s cubic-bezier(0.34,1.56,0.64,1)'
+          }}>
+            {matchingModal.step === 'ask_matching' ? (
+              <>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+                <h2 style={{
+                  color: '#f1f5f9', fontSize: '20px', fontWeight: '700',
+                  marginBottom: '10px', letterSpacing: '0.3px'
+                }}>Matching Check Required</h2>
+                <p style={{
+                  color: '#94a3b8', fontSize: '14px', lineHeight: '1.6',
+                  marginBottom: '28px'
+                }}>
+                  Before issuing weight against this shade, is there any
+                  <strong style={{ color: '#60a5fa' }}> matching </strong>
+                  to be verified?
+                </p>
+                <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => handleMatchingResponse(false)}
+                    style={{
+                      flex: 1, padding: '13px 20px',
+                      background: 'linear-gradient(135deg, #0ca678, #0b7285)',
+                      color: 'white', border: 'none', borderRadius: '12px',
+                      fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+                      boxShadow: '0 4px 15px rgba(12,166,120,0.25)',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(12,166,120,0.45)'; }}
+                    onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(12,166,120,0.25)'; }}
+                  >
+                    ✅ No,there will be no matching
+                  </button>
+                  <button
+                    onClick={() => handleMatchingResponse(true)}
+                    style={{
+                      flex: 1, padding: '13px 20px',
+                      background: 'linear-gradient(135deg, #5f3dc4, #7048e8)',
+                      color: 'white', border: 'none', borderRadius: '12px',
+                      fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+                      boxShadow: '0 4px 15px rgba(95,61,196,0.35)',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(95,61,196,0.5)'; }}
+                    onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(95,61,196,0.35)'; }}
+                  >
+                    🔍 Yes, there will be a matching
+                  </button>
+                </div>
+              </>
+            ) : matchingModal.step === 'ask_passed' ? (
+              <>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>✅</div>
+                <h2 style={{
+                  color: '#f1f5f9', fontSize: '20px', fontWeight: '700',
+                  marginBottom: '10px', letterSpacing: '0.3px'
+                }}>Matching Result</h2>
+                <p style={{
+                  color: '#94a3b8', fontSize: '14px', lineHeight: '1.6',
+                  marginBottom: '28px'
+                }}>
+                  Has the matching
+                  <strong style={{ color: '#facc15' }}> passed </strong>
+                  successfully?
+                </p>
+                <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => handleMatchingPassedResponse(false)}
+                    style={{
+                      flex: 1, padding: '13px 20px',
+                      background: 'linear-gradient(135deg, #e03131, #c92a2a)',
+                      color: 'white', border: 'none', borderRadius: '12px',
+                      fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+                      boxShadow: '0 4px 15px rgba(224,49,49,0.35)',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(224,49,49,0.5)'; }}
+                    onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(224,49,49,0.35)'; }}
+                  >
+                    ❌ No,the matching was not passed successfully
+                  </button>
+                  <button
+                    onClick={() => handleMatchingPassedResponse(true)}
+                    style={{
+                      flex: 1, padding: '13px 20px',
+                      background: 'linear-gradient(135deg, #0ca678, #059669)',
+                      color: 'white', border: 'none', borderRadius: '12px',
+                      fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+                      boxShadow: '0 4px 15px rgba(12,166,120,0.35)',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(12,166,120,0.5)'; }}
+                    onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(12,166,120,0.35)'; }}
+                  >
+                    ✅ Yes, the matching passed successfully
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>👤</div>
+                <h2 style={{
+                  color: '#f1f5f9', fontSize: '20px', fontWeight: '700',
+                  marginBottom: '10px', letterSpacing: '0.3px'
+                }}>Senior Approval</h2>
+                <p style={{
+                  color: '#94a3b8', fontSize: '14px', lineHeight: '1.6',
+                  marginBottom: '20px'
+                }}>
+                  From whom in senior management was the matching passed?
+                </p>
+                <div style={{ marginBottom: '24px' }}>
+                  <input
+                    type="text"
+                    id="matching-approver-input"
+                    placeholder="Enter senior manager's name..."
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      background: 'rgba(30, 41, 59, 0.8)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '12px',
+                      color: 'white',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                      textAlign: 'center'
+                    }}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleMatchingApproverSubmit(e.target.value);
+                      }
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => setMatchingModal({ step: 'ask_passed' })}
+                    style={{
+                      flex: 1, padding: '13px 20px',
+                      background: 'rgba(255,255,255,0.08)',
+                      color: '#bbb', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px',
+                      fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+                      transition: 'background 0.15s'
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      const val = document.getElementById('matching-approver-input')?.value;
+                      handleMatchingApproverSubmit(val);
+                    }}
+                    style={{
+                      flex: 1, padding: '13px 20px',
+                      background: 'linear-gradient(135deg, #0ca678, #059669)',
+                      color: 'white', border: 'none', borderRadius: '12px',
+                      fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+                      boxShadow: '0 4px 15px rgba(12,166,120,0.35)',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(12,166,120,0.5)'; }}
+                    onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(12,166,120,0.35)'; }}
+                  >
+                    Confirm & Allow
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeInModal {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUpModal {
+          from { opacity: 0; transform: translateY(30px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* ── Theme Styling & Layout Enhancements ── */
+        .fabric-issued-container {
+          max-width: 2000px;
+          margin: 0 auto;
+          padding: 4px;
+          color: #212529;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .hero-section {
+          background: linear-gradient(135deg, #5f3dc4 0%, #0b7285 100%) !important;
+          border-radius: 12px !important;
+          box-shadow: 0 4px 16px rgba(95, 61, 196, 0.15) !important;
+          margin-bottom: 10px !important;
+          padding: 14px 24px !important;
+        }
+
+        .hero-back-btn {
+          background: rgba(255, 255, 255, 0.15) !important;
+          border: 1px solid rgba(255, 255, 255, 0.25) !important;
+          border-radius: 8px !important;
+          font-weight: 600 !important;
+          padding: 6px 12px !important;
+          font-size: 12px !important;
+        }
+        .hero-back-btn:hover {
+          background: rgba(255, 255, 255, 0.25) !important;
+        }
+
+        .hero-button {
+          background: #ffffff !important;
+          color: #5f3dc4 !important;
+          border-radius: 8px !important;
+          font-weight: 700 !important;
+          padding: 10px 20px !important;
+          transition: all 0.2s ease !important;
+        }
+        .hero-button:hover {
+          background: #f8fafc !important;
+          transform: translateY(-1px) !important;
+        }
+        
+        .hero-button.secondary {
+          background: rgba(255, 255, 255, 0.12) !important;
+          color: #ffffff !important;
+          border: 1px solid rgba(255, 255, 255, 0.25) !important;
+        }
+        .hero-button.secondary:hover {
+          background: rgba(255, 255, 255, 0.22) !important;
+        }
+
+        .top-search-input, .hero-input {
+          border-radius: 8px !important;
+          border: 2px solid #e9ecef !important;
+          transition: all 0.2s ease !important;
+          padding: 10px 14px 10px 42px !important; /* Left padding for search icon */
+          font-weight: 550 !important;
+        }
+        .scanner-input-modern {
+          border-radius: 8px !important;
+          border: 2px solid #e9ecef !important;
+          transition: all 0.2s ease !important;
+          padding: 10px 14px !important;
+          font-weight: 550 !important;
+        }
+        .top-search-input:focus, .hero-input:focus, .scanner-input-modern:focus {
+          border-color: #5f3dc4 !important;
+          box-shadow: 0 0 0 3.5px rgba(95, 61, 196, 0.15) !important;
+          background-color: #ffffff !important;
+        }
+        .hero-input:focus {
+          color: #0f172a !important;
+        }
+        .hero-input:focus::placeholder {
+          color: #94a3b8 !important;
+        }
+        .hero-input:-webkit-autofill,
+        .hero-input:-webkit-autofill:hover, 
+        .hero-input:-webkit-autofill:focus, 
+        .hero-input:-webkit-autofill:active {
+          -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
+          -webkit-text-fill-color: #0f172a !important;
+          color: #0f172a !important;
+        }
+
+        .top-search-btn {
+          background: #5f3dc4 !important;
+          color: white !important;
+          border-radius: 8px !important;
+          font-weight: 600 !important;
+          padding: 10px 20px !important;
+          border: none !important;
+          transition: all 0.2s ease !important;
+          cursor: pointer !important;
+        }
+        .top-search-btn:hover {
+          background: #512da8 !important;
+        }
+
+        .top-refresh-btn {
+          background: #ffffff !important;
+          border: 2px solid #e9ecef !important;
+          color: #495057 !important;
+          border-radius: 8px !important;
+          font-weight: 600 !important;
+          padding: 8px 16px !important;
+          cursor: pointer !important;
+          transition: all 0.2s ease !important;
+        }
+        .top-refresh-btn:hover {
+          background: #f8f9fa !important;
+          border-color: #ced4da !important;
+        }
+
+        .top-receiving-btn {
+          background: linear-gradient(135deg, #0b7285, #096374) !important;
+          color: white !important;
+          border-radius: 8px !important;
+          box-shadow: 0 4px 10px rgba(11, 114, 133, 0.15) !important;
+          font-weight: 600 !important;
+          border: none !important;
+          padding: 10px 18px !important;
+          transition: all 0.2s ease !important;
+          cursor: pointer !important;
+        }
+        .top-receiving-btn:hover {
+          background: linear-gradient(135deg, #095c6b, #064752) !important;
+          transform: translateY(-1px) !important;
+        }
+
+        .summary-card {
+          background: #ffffff !important;
+          border: 1.5px solid #e9ecef !important;
+          border-radius: 12px !important;
+          padding: 16px !important;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+          transition: all 0.25s ease !important;
+        }
+        .summary-card:hover {
+          transform: translateY(-2px) !important;
+          box-shadow: 0 6px 14px rgba(0,0,0,0.06) !important;
+          border-color: rgba(95, 61, 196, 0.25) !important;
+        }
+        .summary-card .card-icon {
+          background: rgba(95, 61, 196, 0.08) !important;
+          color: #5f3dc4 !important;
+          width: 44px !important;
+          height: 44px !important;
+          border-radius: 50% !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          font-size: 20px !important;
+        }
+        .summary-card .card-value.highlight {
+          color: #5f3dc4 !important;
+        }
+
+        .info-panel, .issuance-panel, .history-section {
+          background: #ffffff !important;
+          border: 1.5px solid #e9ecef !important;
+          border-radius: 12px !important;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.02) !important;
+          margin-bottom: 24px !important;
+          overflow: hidden !important;
+        }
+        .panel-header, .history-header {
+          background-color: #f8f9fa !important;
+          border-bottom: 1.5px solid #e9ecef !important;
+          padding: 14px 20px !important;
+        }
+        .panel-title h3, .history-title h3 {
+          font-size: 15px !important;
+          font-weight: 800 !important;
+          color: #212529 !important;
+        }
+        .panel-title .title-icon, .history-title .title-icon {
+          color: #5f3dc4 !important;
+        }
+
+        .shade-item {
+          border: 1.5px solid #e9ecef !important;
+          border-radius: 10px !important;
+          padding: 16px !important;
+          margin-bottom: 12px !important;
+          transition: all 0.2s ease !important;
+        }
+        .shade-item.selected {
+          border-color: #5f3dc4 !important;
+          background-color: rgba(95, 61, 196, 0.01) !important;
+          box-shadow: 0 4px 12px rgba(95, 61, 196, 0.05) !important;
+        }
+
+        .confirm-button {
+          background: linear-gradient(135deg, #5f3dc4 0%, #7048e8 100%) !important;
+          color: white !important;
+          border-radius: 10px !important;
+          font-weight: 700 !important;
+          padding: 14px 24px !important;
+          border: none !important;
+          box-shadow: 0 4px 15px rgba(95, 61, 196, 0.2) !important;
+          transition: all 0.2s ease !important;
+          cursor: pointer !important;
+        }
+        .confirm-button:hover:not(:disabled) {
+          background: linear-gradient(135deg, #512da8 0%, #5f3dc4 100%) !important;
+          box-shadow: 0 6px 20px rgba(95, 61, 196, 0.3) !important;
+          transform: translateY(-1px) !important;
+        }
+        .confirm-button:disabled {
+          background: #e9ecef !important;
+          color: #adb5bd !important;
+          box-shadow: none !important;
+          cursor: not-allowed !important;
+        }
+
+        .history-card {
+          border: 1.5px solid #e9ecef !important;
+          border-radius: 10px !important;
+          padding: 16px !important;
+          margin-bottom: 12px !important;
+          transition: all 0.2s ease !important;
+        }
+        .history-card:hover {
+          border-color: rgba(95, 61, 196, 0.25) !important;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+        }
+        .history-badge {
+          background: rgba(95, 61, 196, 0.08) !important;
+          color: #5f3dc4 !important;
+          font-weight: 700 !important;
+          border-radius: 6px !important;
+          padding: 4px 10px !important;
+        }
+        .history-item-tag {
+          background: #f1f3f5 !important;
+          border: 1px solid #e9ecef !important;
+          color: #495057 !important;
+          border-radius: 6px !important;
+          padding: 4px 10px !important;
+          font-size: 12px !important;
+          font-weight: 600 !important;
+        }
+      `}</style>
     </div>
   );
 };

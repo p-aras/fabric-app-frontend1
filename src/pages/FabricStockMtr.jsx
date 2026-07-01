@@ -3,27 +3,14 @@ import LocationPicker from '../components/LocationPicker.jsx';
 import { useNavigate } from 'react-router-dom';
 import { store, BASE_URL } from '../store.js';
 import {
-  Scale, Printer, Play, Square, RotateCcw,
+  Printer, Play, Square, RotateCcw,
   CheckCircle2, AlertTriangle, AlertCircle,
   X, CheckCircle, PackagePlus, Eye, Save,
-  Box, Hourglass, ArrowLeftRight
+  Box, Hourglass, ArrowLeftRight, Ruler
 } from 'lucide-react';
 import '../Design/FabricStickerForm.css';
 
-// AUTOFILL CONFIGURATION FOR DYEING MATERIAL
-// You can edit these values to change the default automatic prefill data.
-const DYEING_DEFAULT_DATA = {
-  cmfName: 'Dyeing CMF',
-  fabricName: 'Cotton Dyeing Fabric',
-  group: 'Dyeing Group A',
-  shade: 'Dyeing Shade X',
-  lotNumber: '',
-  billNumber: '',
-  receivedPerson: 'Dyeing Operator',
-  authorizedPerson: 'Dyeing Manager',
-};
-
-const DyeingMaterialForm = () => {
+const FabricStockMtr = () => {
   const navigate = useNavigate();
 
   // Get logged in user data
@@ -32,22 +19,22 @@ const DyeingMaterialForm = () => {
   // Shelves from warehouse settings
   const [shelves, setShelves] = useState([]);
 
-  // Main Form Data with Auto-filled defaults
+  // Main Form Data
   const [formData, setFormData] = useState({
-    cmfName: DYEING_DEFAULT_DATA.cmfName,
-    fabricName: DYEING_DEFAULT_DATA.fabricName,
-    group: DYEING_DEFAULT_DATA.group,
-    issuedShade: DYEING_DEFAULT_DATA.shade,
-    receivedShade: '',
-    weight: '',
-    lotNumber: DYEING_DEFAULT_DATA.lotNumber,
-    billNumber: DYEING_DEFAULT_DATA.billNumber,
+    cmfName: '',
+    fabricName: '',
+    group: '',
+    shade: '',
+    lotNumber: '',
+    billNumber: '',
     location: '',
-    receivedPerson: DYEING_DEFAULT_DATA.receivedPerson,
-    authorizedPerson: DYEING_DEFAULT_DATA.authorizedPerson,
-    date: new Date().toISOString().split('T')[0],
-    rollNumberInput: '1'
+    receivedPerson: '',
+    authorizedPerson: '',
+    date: new Date().toISOString().split('T')[0]
   });
+
+  // Manual roll meters input state
+  const [manualMeters, setManualMeters] = useState('');
 
   // Batch processing states
   const [batchMode, setBatchMode] = useState(false);
@@ -60,18 +47,9 @@ const DyeingMaterialForm = () => {
 
   const [submittedData, setSubmittedData] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [currentWeight, setCurrentWeight] = useState('0.00');
-  const [isReading, setIsReading] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
-  const [isWeightStable, setIsWeightStable] = useState(false);
-  const [lastStableWeight, setLastStableWeight] = useState('0.00');
-  const [rollCount, setRollCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastPrintedRoll, setLastPrintedRoll] = useState(null);
-
-  // Track if waiting for roll removal
-  const [waitingForRollRemoval, setWaitingForRollRemoval] = useState(false);
 
   // UI Instructions
   const [uiInstruction, setUiInstruction] = useState('');
@@ -81,26 +59,29 @@ const DyeingMaterialForm = () => {
   const [activeSteps, setActiveSteps] = useState({
     step1: false, // Fill Form Details
     step2: false, // Set Total Rolls
-    step3: false, // Connect Scale
-    step4: false, // Start Batch
-    step5: false, // Place Roll & Print
-    step6: false  // Complete
+    step3: false, // Start Batch
+    step4: false, // Enter Meters & Print
+    step5: false  // Complete
   });
 
-  // Weight tracking
-  const [consecutiveSameWeight, setConsecutiveSameWeight] = useState(0);
-  const [weightHistory, setWeightHistory] = useState([]);
-
   // Refs for tracking - Optimized memory management
-  const lastWeightRef = useRef(null);
-  const consecutiveCountRef = useRef(0);
-  const weightBufferRef = useRef([]);
-  const stableWeightValueRef = useRef(null);
-  const isDisconnectingRef = useRef(false);
-  const readLoopActiveRef = useRef(false);
-  const abortControllerRef = useRef(null);
+  const isMounted = useRef(true);
+  const wsRef = useRef(null);
 
-  // Batch info data
+  // Print service states
+  const [printServiceStatus, setPrintServiceStatus] = useState('connecting');
+  const [printQueueLength, setPrintQueueLength] = useState(0);
+  const [lastPrintStatus, setLastPrintStatus] = useState(null);
+  const [wsReady, setWsReady] = useState(false);
+
+  // Network / Backend health
+  const [isOnline, setIsOnline] = useState(true);
+  const [isCheckingNetwork, setIsCheckingNetwork] = useState(false);
+  const [offlineQueue, setOfflineQueue] = useState([]);
+  const networkIntervalRef = useRef(null);
+  const offlineQueueRef = useRef([]);
+
+  // Batch details
   const [batchNumber, setBatchNumber] = useState('');
   const [batchDate, setBatchDate] = useState(new Date().toISOString().split('T')[0]);
   const [batchTime, setBatchTime] = useState(new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -114,44 +95,15 @@ const DyeingMaterialForm = () => {
   });
   const [isLoadingSequence, setIsLoadingSequence] = useState(true);
 
-  // Lot Lookup States
-  const [isFetchingLot, setIsFetchingLot] = useState(false);
-  const [fetchError, setFetchError] = useState('');
-
-  // Print service states
-  const [printServiceStatus, setPrintServiceStatus] = useState('connecting');
-  const [printQueueLength, setPrintQueueLength] = useState(0);
-  const [lastPrintStatus, setLastPrintStatus] = useState(null);
-  const [wsReady, setWsReady] = useState(false);
-
-  // ── Network / Backend health ─────────────────────────────────────────
-  const [isOnline, setIsOnline] = useState(true);          // green = true, red = false
-  const [isCheckingNetwork, setIsCheckingNetwork] = useState(false);
-  const [offlineQueue, setOfflineQueue] = useState([]);     // prints waiting for network
-  const networkIntervalRef = useRef(null);
-  const offlineQueueRef = useRef([]);                       // sync ref for async access
-
-  // Refs for cleanup - Optimized
-  const stickerRef = useRef(null);
-  const iframeRef = useRef(null);
-  const portRef = useRef(null);
-  const readerRef = useRef(null);
-  const weightStableTimeoutRef = useRef(null);
-  const autoPrintTimeoutRef = useRef(null);
-  const demoIntervalRef = useRef(null);
+  // Refs for cleanup
   const timeIntervalRef = useRef(null);
-  const serialReadIntervalRef = useRef(null);
 
-  // WebSocket reference
-  const wsRef = useRef(null);
-  const isMounted = useRef(true);
-
-  // ── Keep offlineQueueRef in sync with state ──────────────────────────
+  // Keep offlineQueueRef in sync with state
   useEffect(() => {
     offlineQueueRef.current = offlineQueue;
   }, [offlineQueue]);
 
-  // ── Network health check — pings backend every 5 s ───────────────────
+  // Network health check — pings backend every 5 s
   useEffect(() => {
     const checkNetwork = async () => {
       if (!isMounted.current) return;
@@ -163,7 +115,7 @@ const DyeingMaterialForm = () => {
         clearTimeout(tid);
         if (!isMounted.current) return;
 
-        // ── came back ONLINE ─────────────────────────────────────────
+        // Came back ONLINE
         if (!isOnline) {
           setIsOnline(true);
           showNotification('✅ Network restored! Processing queued prints...', 'success');
@@ -195,44 +147,21 @@ const DyeingMaterialForm = () => {
       }
     };
 
-    checkNetwork(); // immediate first check
+    checkNetwork(); // immediate check
     networkIntervalRef.current = setInterval(checkNetwork, 5000);
 
     return () => {
       if (networkIntervalRef.current) clearInterval(networkIntervalRef.current);
     };
-  }, [isOnline, printServiceStatus]); // re-register when these change
-  const lastPrintTriggerRef = useRef(0);
+  }, [isOnline, printServiceStatus]);
 
-  // Refs for tracking active states to avoid stale closures in intervals
-  const batchActiveRef = useRef(batchActive);
-  const waitingForRollRemovalRef = useRef(waitingForRollRemoval);
-  const isProcessingRef = useRef(isProcessing);
-  const currentRollNumberRef = useRef(currentRollNumber);
-  const totalRollsInBatchRef = useRef(totalRollsInBatch);
-
+  // Update step indicators
   useEffect(() => {
-    batchActiveRef.current = batchActive;
-    waitingForRollRemovalRef.current = waitingForRollRemoval;
-    isProcessingRef.current = isProcessing;
-    currentRollNumberRef.current = currentRollNumber;
-    totalRollsInBatchRef.current = totalRollsInBatch;
-  }, [batchActive, waitingForRollRemoval, isProcessing, currentRollNumber, totalRollsInBatch]);
-
-  useEffect(() => {
-    if (isMounted.current) {
-      setFormData(prev => ({ ...prev, rollNumberInput: String(currentRollNumber + 1) }));
-    }
-  }, [currentRollNumber]);
-
-  useEffect(() => {
-    // Check Step 1: ALL Form Details (all fields required)
     const isStep1Complete =
       formData.cmfName.trim() !== '' &&
       formData.fabricName.trim() !== '' &&
       formData.group.trim() !== '' &&
-      formData.issuedShade.trim() !== '' &&
-      formData.receivedShade.trim() !== '' &&
+      formData.shade.trim() !== '' &&
       formData.lotNumber.trim() !== '' &&
       formData.billNumber.trim() !== '' &&
       formData.location.trim() !== '' &&
@@ -241,33 +170,24 @@ const DyeingMaterialForm = () => {
 
     setActiveSteps(prev => ({ ...prev, step1: isStep1Complete }));
 
-    // Check Step 2: Total Rolls set
     const isStep2Complete = totalRollsInBatch > 0;
     setActiveSteps(prev => ({ ...prev, step2: isStep2Complete }));
 
-    // Check Step 3: Scale Connected or Demo Mode
-    const isStep3Complete = connectionStatus === 'connected' || connectionStatus === 'demo';
-    setActiveSteps(prev => ({ ...prev, step3: isStep3Complete }));
+    setActiveSteps(prev => ({ ...prev, step3: batchActive }));
 
-    // Step 4 is batch active
-    setActiveSteps(prev => ({ ...prev, step4: batchActive }));
+    const isStep4Active = batchActive && manualMeters !== '' && parseFloat(manualMeters) > 0;
+    setActiveSteps(prev => ({ ...prev, step4: isStep4Active }));
 
-    // Step 5 is weight detected (>= 1.0 KG)
-    const isStep5Active = batchActive && parseFloat(currentWeight) >= 1.0 && !waitingForRollRemoval;
-    setActiveSteps(prev => ({ ...prev, step5: isStep5Active }));
+    const isStep5Complete = batchActive && currentRollNumber > 0;
+    setActiveSteps(prev => ({ ...prev, step5: isStep5Complete }));
 
-    // Step 6 is when batch is complete or processing
-    const isStep6Complete = batchActive && currentRollNumber > 0;
-    setActiveSteps(prev => ({ ...prev, step6: isStep6Complete }));
+  }, [formData, totalRollsInBatch, batchActive, manualMeters, currentRollNumber]);
 
-  }, [formData, totalRollsInBatch, connectionStatus, batchActive, currentWeight, waitingForRollRemoval, currentRollNumber]);
-
-  // Update UI instruction
+  // Update UI instruction helper
   const updateInstruction = (message, type = 'info') => {
     if (!isMounted.current) return;
     setUiInstruction(message);
     setInstructionType(type);
-    console.log(`📢 UI: ${message}`);
   };
 
   // Load logged in user data and shelves
@@ -277,11 +197,9 @@ const DyeingMaterialForm = () => {
     if (userData && isMounted.current) {
       setLoggedInUser(JSON.parse(userData));
     } else if (isMounted.current) {
-      // Allow demo user if not logged in for simplicity in development
       setLoggedInUser({ name: 'Admin User', role: 'Admin' });
     }
 
-    // Load shelves for valid location selection
     store.getShelves()
       .then(data => {
         if (isMounted.current) {
@@ -296,12 +214,11 @@ const DyeingMaterialForm = () => {
     };
   }, []);
 
-  // Automatically filter and select a valid location based on total rolls in batch
+  // Filter location based on batch size
   useEffect(() => {
     const reqRolls = parseInt(totalRollsInBatch) || 0;
     const available = shelves.filter(s => (s.capacity - s.used) >= reqRolls);
     if (available.length > 0) {
-      // If current selected location is not valid/available, select the first valid one
       if (!available.some(s => s.id === formData.location)) {
         setFormData(prev => ({ ...prev, location: available[0].id }));
       }
@@ -310,56 +227,14 @@ const DyeingMaterialForm = () => {
     }
   }, [totalRollsInBatch, shelves]);
 
-  // Centralized cleanup function
-  const cleanupAllResources = async () => {
-    console.log('🧹 Starting comprehensive cleanup...');
-
-    if (weightStableTimeoutRef.current) {
-      clearTimeout(weightStableTimeoutRef.current);
-      weightStableTimeoutRef.current = null;
-    }
-
-    if (autoPrintTimeoutRef.current) {
-      clearTimeout(autoPrintTimeoutRef.current);
-      autoPrintTimeoutRef.current = null;
-    }
-
+  const cleanupAllResources = () => {
     if (timeIntervalRef.current) {
       clearInterval(timeIntervalRef.current);
       timeIntervalRef.current = null;
     }
-
-    if (demoIntervalRef.current) {
-      clearInterval(demoIntervalRef.current);
-      demoIntervalRef.current = null;
-    }
-
-    if (serialReadIntervalRef.current) {
-      clearInterval(serialReadIntervalRef.current);
-      serialReadIntervalRef.current = null;
-    }
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    await disconnectScale();
-
-    if (weightBufferRef.current) {
-      weightBufferRef.current = [];
-    }
-
-    lastWeightRef.current = null;
-    stableWeightValueRef.current = null;
-    consecutiveCountRef.current = 0;
-    isDisconnectingRef.current = false;
-    readLoopActiveRef.current = false;
-
-    console.log('✅ Cleanup completed');
   };
 
-  // Update current time every second
+  // Update time
   useEffect(() => {
     timeIntervalRef.current = setInterval(() => {
       if (isMounted.current) {
@@ -375,7 +250,7 @@ const DyeingMaterialForm = () => {
     };
   }, []);
 
-  // Load the next sequential barcode ID from backend
+  // Next barcode helper
   const loadNextBarcodeId = async () => {
     if (!isMounted.current) return;
 
@@ -384,7 +259,7 @@ const DyeingMaterialForm = () => {
 
     try {
       setIsLoadingSequence(true);
-      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id?type=dyeing`, {
+      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id?type=fabric-stock`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -402,15 +277,12 @@ const DyeingMaterialForm = () => {
           next: numericId,
           lastGenerated: barcodeId
         });
-        console.log(`📋 Loaded next barcode ID: ${barcodeId} (Sequence: ${numericId})`);
         return barcodeId;
       } else if (isMounted.current) {
-        console.error('Failed to get next barcode ID, using fallback');
         return getFallbackBarcodeId();
       }
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('Error loading next barcode ID:', error);
       return getFallbackBarcodeId();
     } finally {
       if (isMounted.current) {
@@ -419,20 +291,17 @@ const DyeingMaterialForm = () => {
     }
   };
 
-  // Fallback method if API fails
   const getFallbackBarcodeId = () => {
     const fallbackId = String(Date.now()).slice(-6);
-    console.warn('Using fallback barcode ID:', fallbackId);
     return fallbackId;
   };
 
-  // Function to get next sequential barcode ID
   const getNextSequentialBarcodeId = async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id?type=dyeing`, {
+      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id?type=fabric-stock`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -449,21 +318,17 @@ const DyeingMaterialForm = () => {
           next: numericId,
           lastGenerated: barcodeId
         }));
-        console.log(`🔢 Generated sequential barcode: ${barcodeId} (No. ${numericId})`);
         return barcodeId;
       } else {
         throw new Error('Failed to get sequential ID');
       }
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('Error getting sequential barcode:', error);
       const fallbackId = String(Date.now()).slice(-6);
-      console.warn('Using fallback barcode ID:', fallbackId);
       return fallbackId;
     }
   };
 
-  // Show notification helper
   const showNotification = (message, type = 'info') => {
     if (!isMounted.current) return;
 
@@ -495,7 +360,6 @@ const DyeingMaterialForm = () => {
     }, 3000);
   };
 
-  // Save offline data helper
   const saveOfflineData = async (data, rollNumber) => {
     if (!isMounted.current) return;
 
@@ -506,10 +370,8 @@ const DyeingMaterialForm = () => {
       offlineSavedAt: new Date().toISOString()
     });
     localStorage.setItem('offlineFabricData', JSON.stringify(offlineData));
-    console.log(`💾 Data saved offline (${offlineData.length} items pending sync)`);
   };
 
-  // Log batch completion
   const logBatchCompletion = async (totalProcessed) => {
     if (!batchInfo || !isMounted.current) return;
 
@@ -537,20 +399,17 @@ const DyeingMaterialForm = () => {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
-      console.log('✓ Batch completion logged');
     } catch (error) {
       clearTimeout(timeoutId);
-      console.log('Could not log batch completion:', error);
     }
   };
 
-  // Store data in Google Sheets (locally mapped)
   const storeDataInGoogleSheets = async (data, rollNumber) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const API_URL = `${BASE_URL}/google-sheets/store-dyeing-data`;
+      const API_URL = `${BASE_URL}/google-sheets/store-fabric-data`;
 
       const payload = {
         barcodeId: data.uniqueBarcodeId,
@@ -570,13 +429,12 @@ const DyeingMaterialForm = () => {
         rollNumber: rollNumber,
         batchTotal: data.totalRolls || totalRollsInBatch,
         batchStatus: 'completed',
-        weight: data.weight,
+        weight: data.weight, // manual meters stored in weight column
+        unit: 'MTR', // save custom unit
         generatedAt: data.generatedAt || new Date().toLocaleTimeString(),
         timestamp: data.timestamp || new Date().toISOString(),
         status: 'in_stock'
       };
-
-      console.log('📤 SAVING ROLL TO DATABASE:', payload);
 
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -588,48 +446,33 @@ const DyeingMaterialForm = () => {
       });
       clearTimeout(timeoutId);
 
-      let responseData;
-      try {
-        responseData = await response.json();
-      } catch (jsonErr) {
-        responseData = null;
-      }
-
       if (!response.ok) {
-        const detail = responseData?.message || responseData?.error || `status: ${response.status}`;
-        throw new Error(`HTTP error! ${detail}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      const responseData = await response.json();
 
       if (responseData.success && isMounted.current) {
-        console.log(`✅ SUCCESS: Roll ${rollNumber} saved with barcode: ${data.uniqueBarcodeId}`);
         showNotification(`✓ Roll ${rollNumber} saved (Barcode: ${data.uniqueBarcodeId})`, 'success');
-
         const storedRolls = JSON.parse(localStorage.getItem('fabricRolls') || '[]');
         storedRolls.push(payload);
         localStorage.setItem('fabricRolls', JSON.stringify(storedRolls));
-
         return true;
       } else {
-        console.error('❌ Backend returned error:', responseData);
         showNotification(`⚠️ Save failed: ${responseData.message}`, 'error');
         return false;
       }
-
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('❌ NETWORK ERROR:', error);
       showNotification(`❌ Connection Error: ${error.message}`, 'error');
       await saveOfflineData(data, rollNumber);
       return false;
     }
   };
 
-  // Stop batch function
   const stopBatch = async () => {
     if (!batchActive || !isMounted.current) return;
 
     setShowStopConfirm(false);
-    setWaitingForRollRemoval(false);
 
     const actualRollsProcessed = currentRollNumber;
     const expectedRolls = totalRollsInBatch;
@@ -648,14 +491,12 @@ const DyeingMaterialForm = () => {
       note: `${cancelledRolls} rolls were CANCELLED - not saved`
     };
 
-    console.log('Batch stopped:', summary);
-
     const stoppedBatches = JSON.parse(localStorage.getItem('completedBatches') || '[]');
     stoppedBatches.push(summary);
     localStorage.setItem('completedBatches', JSON.stringify(stoppedBatches));
 
     showNotification(
-      `✓ Batch completed! Processed ${actualRollsProcessed} of ${expectedRolls} rolls. ${cancelledRolls} rolls were CANCELLED.`,
+      `✓ Batch completed! Processed ${actualRollsProcessed} of ${expectedRolls} rolls.`,
       'success'
     );
 
@@ -677,15 +518,11 @@ const DyeingMaterialForm = () => {
       clearTimeout(stopTimeoutId);
     } catch (error) {
       clearTimeout(stopTimeoutId);
-      console.log('Could not sync batch completion to backend:', error);
     }
 
     setBatchActive(false);
     setBatchMode(false);
     updateInstruction('Batch completed. Click "New Batch" to start again', 'success');
-
-    // Reset step indicators
-    setActiveSteps(prev => ({ ...prev, step4: false, step5: false, step6: false }));
 
     setTimeout(() => {
       if (isMounted.current) {
@@ -710,7 +547,7 @@ const DyeingMaterialForm = () => {
     setShowStopConfirm(false);
   };
 
-  // Connect to Print Service
+  // Connect websocket printing
   useEffect(() => {
     connectToPrintService();
     loadNextBarcodeId();
@@ -721,18 +558,6 @@ const DyeingMaterialForm = () => {
           wsRef.current.close();
         }
         wsRef.current = null;
-      }
-      if (autoPrintTimeoutRef.current) {
-        clearTimeout(autoPrintTimeoutRef.current);
-        autoPrintTimeoutRef.current = null;
-      }
-      if (weightStableTimeoutRef.current) {
-        clearTimeout(weightStableTimeoutRef.current);
-        weightStableTimeoutRef.current = null;
-      }
-      if (demoIntervalRef.current) {
-        clearInterval(demoIntervalRef.current);
-        demoIntervalRef.current = null;
       }
     };
   }, []);
@@ -745,7 +570,6 @@ const DyeingMaterialForm = () => {
 
     const connectionTimeout = setTimeout(() => {
       if (wsRef.current && wsRef.current.readyState !== WebSocket.OPEN) {
-        console.error('❌ Connection timeout after 5 seconds');
         if (isMounted.current) {
           setPrintServiceStatus('error');
           setErrorMessage('Connection timeout - print service not responding');
@@ -759,7 +583,6 @@ const DyeingMaterialForm = () => {
 
       wsRef.current.onopen = () => {
         clearTimeout(connectionTimeout);
-        console.log('✅ WebSocket connection established');
         if (isMounted.current) {
           setPrintServiceStatus('connected');
           updateInstruction('✅ Connected to print service!', 'success');
@@ -842,7 +665,6 @@ const DyeingMaterialForm = () => {
 
         setTimeout(() => {
           if (isMounted.current && (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)) {
-            console.log('🔄 Attempting to reconnect...');
             connectToPrintService();
           }
         }, 5000);
@@ -881,359 +703,6 @@ const DyeingMaterialForm = () => {
     }
   };
 
-  // Reset tracking for new roll
-  const resetTracking = () => {
-    if (weightStableTimeoutRef.current) {
-      clearTimeout(weightStableTimeoutRef.current);
-      weightStableTimeoutRef.current = null;
-    }
-
-    if (autoPrintTimeoutRef.current) {
-      clearTimeout(autoPrintTimeoutRef.current);
-      autoPrintTimeoutRef.current = null;
-    }
-
-    lastWeightRef.current = null;
-    consecutiveCountRef.current = 0;
-    stableWeightValueRef.current = null;
-    setIsWeightStable(false);
-    setLastStableWeight('0.00');
-    weightBufferRef.current = [];
-  };
-
-  // Weight extraction with validation
-  const extractWeightFromData = (data) => {
-    // Strict patterns: require decimal point and reasonable precision
-    const patterns = [
-      /(\d{1,4}\.\d{2,3})\s*(?:kg|KG|Kg)?/,  // e.g. 13.78 kg
-      /(\d{1,4}\.\d{1})\s*(?:kg|KG|Kg)?/,      // e.g. 13.8 kg
-    ];
-
-    for (const pattern of patterns) {
-      const match = data.match(pattern);
-      if (match && match[1]) {
-        let weight = parseFloat(match[1]);
-        // Reject clearly invalid readings: must be 1.0 – 200.0 kg
-        if (!isNaN(weight) && weight >= 1.0 && weight <= 200.0) {
-          weight = Math.round(weight * 100) / 100;
-          return weight.toFixed(2);
-        }
-      }
-    }
-    return null;
-  };
-
-  // Enhanced stopReading function
-  const stopReading = async () => {
-    readLoopActiveRef.current = false;
-
-    if (readerRef.current) {
-      try {
-        await readerRef.current.cancel();
-        readerRef.current.releaseLock();
-      } catch (error) {
-        console.error('Error canceling reader:', error);
-      }
-      readerRef.current = null;
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  };
-
-  // Enhanced disconnect function
-  const disconnectScale = async () => {
-    if (isDisconnectingRef.current) return;
-
-    isDisconnectingRef.current = true;
-    updateInstruction('Disconnecting scale... Please wait', 'warning');
-
-    if (weightStableTimeoutRef.current) {
-      clearTimeout(weightStableTimeoutRef.current);
-      weightStableTimeoutRef.current = null;
-    }
-
-    if (autoPrintTimeoutRef.current) {
-      clearTimeout(autoPrintTimeoutRef.current);
-      autoPrintTimeoutRef.current = null;
-    }
-
-    await stopReading();
-
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    if (portRef.current) {
-      try {
-        if (portRef.current.readable) {
-          await portRef.current.readable.cancel();
-        }
-        await portRef.current.close();
-        portRef.current = null;
-      } catch (error) {
-        console.error('Error closing port:', error);
-        portRef.current = null;
-      }
-    }
-
-    if (weightBufferRef.current) {
-      weightBufferRef.current = [];
-    }
-
-    lastWeightRef.current = null;
-    stableWeightValueRef.current = null;
-    consecutiveCountRef.current = 0;
-    readLoopActiveRef.current = false;
-
-    if (isMounted.current) {
-      setIsConnected(false);
-      setConnectionStatus('disconnected');
-      setCurrentWeight('0.00');
-      setIsWeightStable(false);
-      setConsecutiveSameWeight(0);
-      setWeightHistory([]);
-      setWaitingForRollRemoval(false);
-      setErrorMessage('');
-      updateInstruction('Scale disconnected. Click "Connect USB Scale" to reconnect', 'info');
-      showNotification('Scale disconnected successfully!', 'success');
-    }
-
-    isDisconnectingRef.current = false;
-  };
-
-  // Reset serial connection function
-  const resetSerialConnection = async () => {
-    updateInstruction('Resetting serial connection...', 'warning');
-    await disconnectScale();
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    if (isMounted.current) {
-      setCurrentWeight('0.00');
-      setConnectionStatus('disconnected');
-      setIsConnected(false);
-      setErrorMessage('');
-      updateInstruction('Serial connection reset. You can now reconnect the scale.', 'success');
-      showNotification('Serial connection reset successfully!', 'success');
-    }
-  };
-
-  // Enhanced startReading function
-  const startReading = async (port) => {
-    if (readLoopActiveRef.current) {
-      await stopReading();
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let lastReadTime = 0;
-    const MIN_READ_INTERVAL = 200;
-    let consecutiveEmptyReads = 0;
-    readLoopActiveRef.current = true;
-
-    try {
-      while (port.readable && isMounted.current && readLoopActiveRef.current && !isDisconnectingRef.current) {
-        readerRef.current = port.readable.getReader();
-
-        try {
-          while (true && isMounted.current && readLoopActiveRef.current && !isDisconnectingRef.current) {
-            const { value, done } = await readerRef.current.read();
-
-            if (done) break;
-
-            const now = Date.now();
-            if (now - lastReadTime < MIN_READ_INTERVAL) {
-              continue;
-            }
-            lastReadTime = now;
-
-            const text = decoder.decode(value);
-            buffer += text;
-
-            let lines = buffer.split(/\r?\n|\r/);
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmedLine = line.trim();
-              if (!trimmedLine) {
-                consecutiveEmptyReads++;
-                if (consecutiveEmptyReads > 10) {
-                  buffer = '';
-                  consecutiveEmptyReads = 0;
-                }
-                continue;
-              }
-
-              consecutiveEmptyReads = 0;
-
-              const weight = extractWeightFromData(trimmedLine);
-              if (weight !== null && !isNaN(weight)) {
-                updateWeightDisplay(weight);
-              }
-            }
-
-            if (buffer.length > 500) {
-              buffer = '';
-            }
-          }
-        } catch (error) {
-          break;
-        } finally {
-          if (readerRef.current) {
-            readerRef.current.releaseLock();
-            readerRef.current = null;
-          }
-        }
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      readLoopActiveRef.current = false;
-    }
-  };
-
-  const startDemoMode = () => {
-    if (!isMounted.current) return;
-
-    let index = 0;
-    const demoWeights = ['12.50', '15.75', '18.20', '22.35', '25.60', '28.45'];
-
-    resetTracking();
-    setWaitingForRollRemoval(false);
-    setCurrentWeight('0.00');
-    setLastStableWeight('0.00');
-
-    setConnectionStatus('demo');
-    setIsConnected(true);
-
-    if (batchActive) {
-      setCurrentWeight('12.50');
-      setFormData(prev => ({ ...prev, weight: '12.50' }));
-    }
-
-    if (demoIntervalRef.current) {
-      clearInterval(demoIntervalRef.current);
-    }
-
-    updateInstruction('🎮 Demo mode active! Fill the form and click "Start Batch" to begin', 'info');
-    showNotification('Demo mode activated!', 'success');
-
-    demoIntervalRef.current = setInterval(() => {
-      if (!isMounted.current) return;
-
-      const isBatchActive = batchActiveRef.current;
-      const isWaiting = waitingForRollRemovalRef.current;
-      const processing = isProcessingRef.current;
-      const rollNum = currentRollNumberRef.current;
-      const totalRolls = totalRollsInBatchRef.current;
-
-      if (isBatchActive) {
-        if (!isWaiting && !processing && rollNum < totalRolls) {
-          const weight = demoWeights[index % demoWeights.length];
-          updateWeightDisplay(weight);
-          index++;
-        }
-        else if (isWaiting && !processing) {
-          setCurrentWeight('0.00');
-        }
-      } else {
-        setCurrentWeight('0.00');
-      }
-    }, 2500);
-  };
-
-  const stopDemoMode = () => {
-    if (demoIntervalRef.current) {
-      clearInterval(demoIntervalRef.current);
-      demoIntervalRef.current = null;
-    }
-
-    setConnectionStatus('disconnected');
-    setIsConnected(false);
-    setCurrentWeight('0.00');
-    updateInstruction('Demo mode stopped. Click "Connect USB Scale" to use physical scale.', 'info');
-    showNotification('Demo mode deactivated', 'info');
-
-    disconnectScale();
-  };
-
-  const connectToScale = async () => {
-    if (isDisconnectingRef.current) {
-      showNotification('Please wait, still disconnecting...', 'warning');
-      return;
-    }
-
-    setErrorMessage('');
-    setConnectionStatus('connecting');
-    updateInstruction('Connecting to scale... Please select the USB device', 'info');
-
-    try {
-      if ('serial' in navigator) {
-        const port = await navigator.serial.requestPort();
-
-        await port.open({
-          baudRate: 9600,
-          dataBits: 8,
-          stopBits: 1,
-          parity: 'none',
-          flowControl: 'none',
-          bufferSize: 255
-        });
-
-        portRef.current = port;
-        setIsConnected(true);
-        setConnectionStatus('connected');
-        updateInstruction('✅ Scale connected! Start a batch to begin', 'success');
-        showNotification('Scale connected successfully!', 'success');
-
-        startReading(port);
-      } else {
-        throw new Error('Web Serial API not supported. Please use Chrome or Edge browser.');
-      }
-    } catch (error) {
-      console.error('Connection error:', error);
-      setErrorMessage(error.message || 'Failed to connect to weighing scale');
-      setConnectionStatus('error');
-      setIsConnected(false);
-      updateInstruction(`❌ Connection failed: ${error.message}`, 'error');
-    }
-  };
-
-  // Fetch lot details from Google Sheet
-  const handleFetchLotDetails = async () => {
-    if (!formData.lotNumber) return;
-    setIsFetchingLot(true);
-    setFetchError('');
-    try {
-      const res = await store.fetchDyeingLotDetails(formData.lotNumber.trim());
-      if (res.success && res.data) {
-        const lotData = res.data;
-        setFormData(prev => ({
-          ...prev,
-          cmfName: lotData.cmfName || prev.cmfName,
-          fabricName: lotData.fabricName || prev.fabricName,
-          group: lotData.group || prev.group,
-          issuedShade: lotData.shade || prev.issuedShade,
-          billNumber: lotData.billNumber || prev.billNumber,
-          date: lotData.date || prev.date,
-          receivedPerson: lotData.receivedPerson || prev.receivedPerson,
-          authorizedPerson: lotData.authorizedPerson || prev.authorizedPerson,
-        }));
-
-        if (lotData.totalRolls) {
-          setTotalRollsInBatch(lotData.totalRolls);
-        }
-
-        showNotification(`✓ Lot No #${formData.lotNumber} details auto-filled from Google Sheet!`, 'success');
-      } else {
-        setFetchError('Failed to fetch details.');
-      }
-    } catch (err) {
-      console.error(err);
-      setFetchError(err.message || 'Error fetching lot details from Google Sheet.');
-      showNotification('❌ Lot fetch failed', 'error');
-    } finally {
-      setIsFetchingLot(false);
-    }
-  };
-
-  // Start batch process
   const startBatchProcess = async () => {
     if (!isMounted.current) return;
 
@@ -1243,10 +712,10 @@ const DyeingMaterialForm = () => {
       setBatchNumber(currentBatchNumber);
     }
 
-    // ALL FIELDS VALIDATION - Make every field required
+    // Validation
     if (!formData.cmfName || formData.cmfName.trim() === '') {
-      showNotification("❌ CMF Name is required.", "error");
-      updateInstruction("❌ Please enter CMF Name", "error");
+      showNotification("❌ CMP Name is required.", "error");
+      updateInstruction("❌ Please enter CMP Name", "error");
       return;
     }
     if (!formData.fabricName || formData.fabricName.trim() === '') {
@@ -1259,14 +728,9 @@ const DyeingMaterialForm = () => {
       updateInstruction("❌ Please enter Group", "error");
       return;
     }
-    if (!formData.issuedShade || formData.issuedShade.trim() === '') {
-      showNotification("❌ Issued Shade is required.", "error");
-      updateInstruction("❌ Please enter Issued Shade", "error");
-      return;
-    }
-    if (!formData.receivedShade || formData.receivedShade.trim() === '') {
-      showNotification("❌ Received Shade is required.", "error");
-      updateInstruction("❌ Please enter Received Shade", "error");
+    if (!formData.shade || formData.shade.trim() === '') {
+      showNotification("❌ Shade is required.", "error");
+      updateInstruction("❌ Please enter Shade", "error");
       return;
     }
     if (!formData.lotNumber || formData.lotNumber.trim() === '') {
@@ -1308,8 +772,7 @@ const DyeingMaterialForm = () => {
       cmfName: formData.cmfName,
       fabricName: formData.fabricName,
       group: formData.group,
-      issuedShade: formData.issuedShade,
-      receivedShade: formData.receivedShade,
+      shade: formData.shade,
       lotNumber: formData.lotNumber,
       billNumber: formData.billNumber,
       date: formData.date,
@@ -1324,25 +787,13 @@ const DyeingMaterialForm = () => {
     setCurrentRollNumber(0);
     setCompletedRolls([]);
     setBatchMode(false);
-    setWaitingForRollRemoval(false);
-    resetTracking();
-
-    if (connectionStatus === 'demo') {
-      setCurrentWeight('12.50');
-      setFormData(prev => ({ ...prev, weight: '12.50' }));
-    } else {
-      setCurrentWeight('0.00');
-      setLastStableWeight('0.00');
-    }
+    setManualMeters('');
 
     const nextIdDisplay = nextBarcodeId || 'loading...';
-    const successMessage = `✅ Batch started! Batch Number: ${currentBatchNumber}, Expected ${totalRollsInBatch} rolls. Next barcode: ${nextIdDisplay}`;
-
-    updateInstruction(`✅ Batch started! Place roll 1 of ${totalRollsInBatch} on the scale`, 'success');
-    showNotification(successMessage, 'success');
+    updateInstruction(`✅ Batch started! Enter meters for roll 1 of ${totalRollsInBatch}`, 'success');
+    showNotification(`✅ Batch started! Next barcode: ${nextIdDisplay}`, 'success');
   };
 
-  // PRINT FUNCTION - called by Enter key
   const handlePrint = async () => {
     if (isProcessing) {
       showNotification('Already processing, please wait...', 'warning');
@@ -1359,21 +810,14 @@ const DyeingMaterialForm = () => {
       return;
     }
 
-    const currentWeightNum = parseFloat(currentWeight);
-    if (currentWeightNum < 0.1) {
-      showNotification(`Weight ${currentWeight} KG is too low. Please place roll on scale.`, 'warning');
+    const metersVal = parseFloat(manualMeters);
+    if (isNaN(metersVal) || metersVal <= 0.1) {
+      showNotification(`Please enter a valid meters value.`, 'warning');
       return;
     }
 
-    if (waitingForRollRemoval) {
-      showNotification('Please remove the previous roll first', 'warning');
-      return;
-    }
-
-    const rollNum = parseInt(formData.rollNumberInput) || (currentRollNumber + 1);
-    setWaitingForRollRemoval(true);
     setIsProcessing(true);
-    updateInstruction(`🖨️ Printing sticker for roll ${rollNum}...`, 'info');
+    updateInstruction(`🖨️ Printing sticker for roll ${currentRollNumber + 1}...`, 'info');
 
     try {
       const barcodeId = await getNextSequentialBarcodeId();
@@ -1385,232 +829,135 @@ const DyeingMaterialForm = () => {
         cmfName: batchInfo.cmfName,
         fabricName: batchInfo.fabricName,
         group: batchInfo.group,
-        shade: `${batchInfo.issuedShade} / ${formData.receivedShade}`,
-        issuedShade: batchInfo.issuedShade,
-        receivedShade: formData.receivedShade,
-        weight: currentWeight,
+        shade: batchInfo.shade,
+        weight: metersVal.toFixed(2), // manual meters value
         lotNumber: batchInfo.lotNumber,
-        billNumber: formData.billNumber,
+        billNumber: batchInfo.billNumber,
         date: batchInfo.date || dateString,
         location: batchInfo.location,
         receivedPerson: batchInfo.receivedPerson,
         authorizedPerson: batchInfo.authorizedPerson,
-        rollNumber: rollNum,
+        rollNumber: currentRollNumber + 1,
         totalRolls: totalRollsInBatch,
         uniqueBarcodeId: barcodeId,
+        unit: 'MTR', // unit property is set to meters
         generatedAt: timeString,
         timestamp: currentTime.toISOString(),
         status: 'in_stock'
       };
 
-      // ── If backend is offline → queue the job and show waiting banner ─
       if (!isOnline) {
-        const queuedJob = { stickerData, rollNumber: rollNum };
+        const queuedJob = { stickerData, rollNumber: currentRollNumber + 1 };
         setOfflineQueue(prev => [...prev, queuedJob]);
-        offlineQueueRef.current = [...offlineQueueRef.current, queuedJob];
-        showNotification(`🔴 No network — Roll ${rollNum} queued. Will print when network returns.`, 'warning');
-        updateInstruction('🔴 No network! Roll queued — waiting for network to restore...', 'error');
-        // still advance roll count so worker can continue placing rolls
+        showNotification(`🔴 No network — Roll ${currentRollNumber + 1} queued.`, 'warning');
+        updateInstruction('🔴 No network! Roll queued — waiting for connection...', 'error');
+
         setCompletedRolls(prev => [...prev, {
-          rollNumber: rollNum,
-          weight: currentWeight,
+          rollNumber: currentRollNumber + 1,
+          weight: metersVal.toFixed(2),
           barcodeId: barcodeId,
           timestamp: timeString,
           fabricName: batchInfo.fabricName,
-          shade: `${batchInfo.issuedShade} / ${formData.receivedShade}`,
+          shade: batchInfo.shade,
           queued: true
         }]);
+
         const newRollNumber = currentRollNumber + 1;
         setCurrentRollNumber(newRollNumber);
-        setLastPrintedRoll(rollNum);
+        setLastPrintedRoll(newRollNumber);
         loadNextBarcodeId();
-        setCurrentWeight('0.00');
-        setFormData(prev => ({ ...prev, weight: '0.00' }));
+        setManualMeters('');
+
         if (newRollNumber >= totalRollsInBatch) {
           setBatchActive(false);
-          setWaitingForRollRemoval(false);
-          updateInstruction('🔴 Batch done. Queued rolls will auto-print when network restores.', 'warning');
+          updateInstruction('🔴 Batch done. Queued rolls will print when network restores.', 'warning');
         } else {
-          setWaitingForRollRemoval(false);
-          updateInstruction(`⏳ Roll ${newRollNumber} queued. Place roll ${newRollNumber + 1} of ${totalRollsInBatch}`, 'warning');
+          updateInstruction(`⏳ Roll ${newRollNumber} queued. Enter meters for roll ${newRollNumber + 1} of ${totalRollsInBatch}`, 'warning');
         }
         return;
       }
 
-      const stored = await storeDataInGoogleSheets(stickerData, rollNum);
+      const stored = await storeDataInGoogleSheets(stickerData, currentRollNumber + 1);
 
       if (stored) {
         setSubmittedData(stickerData);
 
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && printServiceStatus === 'ready') {
           printViaPythonService(stickerData);
-          showNotification(`✓ Roll ${rollNum} sticker printed!`, 'success');
-          updateInstruction(`✅ Roll ${rollNum} printed!`, 'success');
+          showNotification(`✓ Roll ${currentRollNumber + 1} sticker printed!`, 'success');
+          updateInstruction(`✅ Roll ${currentRollNumber + 1} printed!`, 'success');
         } else {
           showNotification('⚠️ Data saved but print service offline', 'warning');
         }
 
         setCompletedRolls(prev => [...prev, {
-          rollNumber: rollNum,
-          weight: currentWeight,
+          rollNumber: currentRollNumber + 1,
+          weight: metersVal.toFixed(2),
           barcodeId: barcodeId,
           timestamp: timeString,
           fabricName: batchInfo.fabricName,
-          shade: `${batchInfo.issuedShade} / ${formData.receivedShade}`
+          shade: batchInfo.shade
         }]);
 
         const newRollNumber = currentRollNumber + 1;
         setCurrentRollNumber(newRollNumber);
-        setLastPrintedRoll(rollNum);
+        setLastPrintedRoll(newRollNumber);
         loadNextBarcodeId();
-
-        setCurrentWeight('0.00');
-        setFormData(prev => ({ ...prev, weight: '0.00' }));
+        setManualMeters('');
 
         if (newRollNumber >= totalRollsInBatch) {
           showNotification(`🎉 Batch complete!`, 'success');
           setBatchActive(false);
-          setWaitingForRollRemoval(false);
           await logBatchCompletion(newRollNumber);
           updateInstruction('🎉 Batch completed! Start a new batch to continue', 'success');
-          setActiveSteps(prev => ({ ...prev, step6: true }));
         } else {
           showNotification(`✅ Roll ${newRollNumber} done! Ready for next roll`, 'success');
-          updateInstruction(`✅ Roll ${newRollNumber} printed! Place roll ${newRollNumber + 1} of ${totalRollsInBatch} on the scale`, 'success');
-          setWaitingForRollRemoval(false);
+          updateInstruction(`✅ Roll ${newRollNumber} printed! Enter meters for roll ${newRollNumber + 1} of ${totalRollsInBatch}`, 'success');
         }
       }
     } catch (error) {
       console.error('❌ Print error:', error);
       showNotification('Error printing', 'error');
-      setWaitingForRollRemoval(false);
     } finally {
       setTimeout(() => {
         setIsProcessing(false);
-      }, 2000);
+        // Refocus manual input
+        const inputEl = document.getElementById("manual-meters-input");
+        if (inputEl) inputEl.focus();
+      }, 500);
     }
   };
 
-  // ── Weight Stabilization Config ──────────────────────────────────────
-  const WEIGHT_BUFFER_SIZE = 7;
-  const STABLE_COUNT_NEEDED = 4;
-  const STABLE_TOLERANCE_KG = 0.15;
-  const SPIKE_REJECT_RATIO = 0.30;
-  const MIN_VALID_WEIGHT_KG = 1.0;
-  const MAX_VALID_WEIGHT_KG = 200.0;
-
-  const updateWeightDisplay = (weight) => {
-    const newVal = parseFloat(weight);
-    if (isNaN(newVal)) return;
-
-    if (newVal < MIN_VALID_WEIGHT_KG || newVal > MAX_VALID_WEIGHT_KG) {
-      setCurrentWeight('0.00');
-      return;
-    }
-
-    const isProc = isProcessingRef.current;
-    const isWait = waitingForRollRemovalRef.current;
-    const active = batchActiveRef.current;
-    const rollNum = currentRollNumberRef.current;
-    const totalRolls = totalRollsInBatchRef.current;
-
-    if (isProc || isWait) return;
-
-    const buf = weightBufferRef.current;
-    buf.push(newVal);
-    if (buf.length > WEIGHT_BUFFER_SIZE) buf.shift();
-
-    const sorted = [...buf].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-
-    if (buf.length >= 3) {
-      const deviation = Math.abs(newVal - median) / (median || 1);
-      if (deviation > SPIKE_REJECT_RATIO) {
-        console.warn(`⚠️ Spike rejected: ${newVal} KG (median=${median.toFixed(2)} KG, dev=${(deviation * 100).toFixed(0)}%)`);
-        return;
+  // Keyboard ENTER key on manual entry field triggers print
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (batchActive && !isProcessing && manualMeters !== '' && parseFloat(manualMeters) > 0) {
+        handlePrint();
       }
-    }
-
-    const lastWeight = lastWeightRef.current;
-    if (lastWeight !== null && Math.abs(newVal - lastWeight) <= STABLE_TOLERANCE_KG) {
-      consecutiveCountRef.current += 1;
-    } else {
-      consecutiveCountRef.current = 1;
-    }
-    lastWeightRef.current = newVal;
-
-    const stableEnough = consecutiveCountRef.current >= STABLE_COUNT_NEEDED;
-    const displayWeight = median.toFixed(2);
-
-    if (stableEnough) {
-      stableWeightValueRef.current = displayWeight;
-      setCurrentWeight(displayWeight);
-      setFormData(prev => ({ ...prev, weight: displayWeight }));
-
-      if (active && median >= MIN_VALID_WEIGHT_KG && rollNum < totalRolls) {
-        updateInstruction(`✅ Weight: ${displayWeight} KG. Press ENTER to print sticker!`, 'success');
-        showNotification(`Weight detected: ${displayWeight} KG. Press ENTER to print`, 'info');
-      } else if (active && rollNum < totalRolls && median < MIN_VALID_WEIGHT_KG && median > 0) {
-        updateInstruction(`⚠️ Weight (${displayWeight} KG) is too low — minimum 1 KG required. Place roll on scale.`, 'warning');
-      }
-    } else {
-      setCurrentWeight(newVal.toFixed(2));
     }
   };
-
-  // ENTER key listener for printing
-  useEffect(() => {
-    const handleKeyPress = (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const weightNum = parseFloat(currentWeight);
-        const isStable = stableWeightValueRef.current !== null;
-        const stableVal = parseFloat(stableWeightValueRef.current || '0');
-
-        if (batchActive && !isProcessing && !waitingForRollRemoval && isStable && stableVal >= 1.0 && currentRollNumber < totalRollsInBatch) {
-          handlePrint();
-        } else {
-          if (!batchActive) {
-            showNotification('Please start a batch first', 'warning');
-          } else if (waitingForRollRemoval) {
-            showNotification('Please remove the previous roll first', 'warning');
-          } else if (!isStable || weightNum < 1.0) {
-            showNotification('⏳ Weight still stabilizing — please wait for a steady reading.', 'warning');
-          }
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [batchActive, isProcessing, waitingForRollRemoval, currentWeight, currentRollNumber, totalRollsInBatch]);
 
   const handleReset = () => {
     setFormData({
-      cmfName: DYEING_DEFAULT_DATA.cmfName,
-      fabricName: DYEING_DEFAULT_DATA.fabricName,
-      group: DYEING_DEFAULT_DATA.group,
-      issuedShade: DYEING_DEFAULT_DATA.shade,
-      receivedShade: '',
-      weight: '',
-      lotNumber: DYEING_DEFAULT_DATA.lotNumber,
-      billNumber: DYEING_DEFAULT_DATA.billNumber,
+      cmfName: '',
+      fabricName: '',
+      group: '',
+      shade: '',
+      lotNumber: '',
+      billNumber: '',
       location: '',
-      receivedPerson: DYEING_DEFAULT_DATA.receivedPerson,
-      authorizedPerson: DYEING_DEFAULT_DATA.authorizedPerson,
-      date: new Date().toISOString().split('T')[0],
-      rollNumberInput: '1'
+      receivedPerson: '',
+      authorizedPerson: '',
+      date: new Date().toISOString().split('T')[0]
     });
     setBatchActive(false);
     setCurrentRollNumber(0);
     setCompletedRolls([]);
     setBatchInfo(null);
-    setWaitingForRollRemoval(false);
-    resetTracking();
-    setCurrentWeight('0.00');
-    setLastStableWeight('0.00');
-    updateInstruction('Form reset. Default values filled. Set total rolls to start again.', 'info');
+    setManualMeters('');
+    setLastPrintedRoll(null);
+    updateInstruction('Form reset. Fill the details to start again.', 'info');
   };
 
   const handleInputChange = (key, val) => {
@@ -1670,45 +1017,32 @@ const DyeingMaterialForm = () => {
 
             <button className="btn-stop-batch-cancel" onClick={() => setShowStopConfirm(true)}>
               <Square size={16} />
-              Stop & Cancel Remaining Rolls
+              Stop & Cancel Remaining
             </button>
-
-            <div className="barcode-sequential-note">
-              <AlertCircle size={12} />
-              <span>Sequential barcode IDs (6-digit format: 000001, 000002, ...)</span>
-            </div>
           </div>
         </div>
       )}
 
-      {/* Title Header */}
+      {/* Page Header */}
       <div className="page-header">
         <div className="page-title-block">
-          <div className="breadcrumb"><span>Home</span><span>/</span><span>Dyeing Material</span></div>
-          <h1>Add dyeing material details</h1>
-          <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: 13 }}>
-            ✨ Fields are automatically pre-filled for dyeing materials. You can edit them as needed.
-          </p>
+          <div className="breadcrumb"><span>Home</span><span>/</span><span>Material</span></div>
+          <h1>Add Fabric Stock (Meters)</h1>
         </div>
         <div className="page-actions">
-          <button
-            className="btn-page-switch"
+          <button 
+            className="btn-page-switch" 
             onClick={() => navigate('/fabric-sticker')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <ArrowLeftRight size={14} /> Switch to Material Add
+            <ArrowLeftRight size={14} /> Switch to Scale Weight
           </button>
         </div>
       </div>
 
-      {/* Connection and Instruction Banner */}
+      {/* Scale & Printer Status Banner */}
       <div className="scale-status-bar">
         <div className="status-indicators">
-          <div className="indicator-item">
-            <Scale size={16} /> USB Scale:
-            <span className={`status-badge ${connectionStatus}`}>
-              {connectionStatus}
-            </span>
-          </div>
           <div className="indicator-item">
             <Printer size={16} /> Printer:
             <span className={`status-badge ${printServiceStatus === 'ready' ? 'connected' : printServiceStatus}`}>
@@ -1716,18 +1050,13 @@ const DyeingMaterialForm = () => {
             </span>
           </div>
 
-          {/* ── Network / Backend Status Light ── */}
           <div className="indicator-item net-status-item">
             <span
               className={`net-light ${isOnline ? 'net-online' : 'net-offline'} ${isCheckingNetwork ? 'net-checking' : ''}`}
-              title={isOnline ? 'Network OK — Backend connected' : 'No network — Backend unreachable'}
+              title={isOnline ? 'Network OK' : 'No network'}
             />
-            <span className={`net-label ${isOnline ? 'net-online' : 'net-offline'}`}>
-              {isCheckingNetwork
-                ? 'Checking...'
-                : isOnline
-                  ? 'Network OK'
-                  : 'No Network'}
+            <span className={`net-label ${isOnline ? 'net-label-online' : 'net-label-offline'}`}>
+              {isCheckingNetwork ? 'Checking...' : isOnline ? 'Network OK' : 'No Network'}
             </span>
             {offlineQueue.length > 0 && (
               <span className="net-queue-badge">{offlineQueue.length} queued</span>
@@ -1742,67 +1071,52 @@ const DyeingMaterialForm = () => {
         )}
       </div>
 
-      {/* ── Offline Queue Warning Banner ── */}
+      {/* Offline banner */}
       {!isOnline && (
         <div className="offline-banner">
           <span className="offline-banner-dot" />
           <div className="offline-banner-text">
-            <strong>No Network — Waiting for connection...</strong>
-            <span>
-              {offlineQueue.length > 0
-                ? `${offlineQueue.length} roll(s) queued. They will be saved & printed automatically when network returns.`
-                : 'Printing and saving is paused. Everything will resume automatically once network is restored.'}
-            </span>
+            <strong>No Network — Offline mode active</strong>
+            <span>Queued roll data will print/save when connection restores.</span>
           </div>
-        </div>
-      )}
-      {isOnline && offlineQueue.length > 0 && (
-        <div className="online-queue-banner">
-          <span className="online-queue-dot" />
-          <strong>Network restored!</strong>
-          <span>Processing {offlineQueue.length} queued roll(s)...</span>
         </div>
       )}
 
       <div className="fabric-layout-grid">
-        {/* Left Side: Scale & Workflow Steps */}
+        {/* Left Side: Manual Meters Entry Box */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Live Weight Dashboard */}
-          <div className={`weight-card ${connectionStatus}`} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div className="weight-label">Weighing Scale Reading</div>
-            <div className="weight-value" style={{ margin: '5px 0' }}>
-              {currentWeight} <span className="weight-unit">KG</span>
+          <div className="weight-card connected" style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)' }}>
+            <div className="weight-label" style={{ color: '#e2e8f0' }}>Enter Roll Meters (MTR) manually</div>
+            <div style={{ margin: '10px 0' }}>
+              <input
+                id="manual-meters-input"
+                className="form-control"
+                style={{ 
+                  fontSize: 24, 
+                  fontWeight: 800, 
+                  textAlign: 'center', 
+                  height: 54, 
+                  color: '#000000', 
+                  backgroundColor: '#ffffff', 
+                  borderRadius: 'var(--radius-md)',
+                  border: '2px solid rgba(255,255,255,0.2)'
+                }}
+                type="number"
+                step="0.01"
+                placeholder="e.g. 50.00"
+                value={manualMeters}
+                onChange={e => setManualMeters(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={!batchActive || isProcessing}
+                autoFocus={batchActive}
+              />
             </div>
-            {connectionStatus === 'disconnected' ? (
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button className="btn btn-primary btn-sm" onClick={connectToScale}>
-                  Connect USB Scale
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={startDemoMode}>
-                  Demo Mode
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button className="btn btn-secondary btn-sm" style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }} onClick={connectionStatus === 'demo' ? stopDemoMode : disconnectScale}>
-                  Disconnect
-                </button>
-                <button className="btn btn-secondary btn-sm" style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }} onClick={resetSerialConnection}>
-                  Reset Port
-                </button>
-              </div>
-            )}
-            {connectionStatus === 'connected' && (
-              <div className="weight-status-indicator" style={{ marginTop: 5 }}>
-                <span className="live-dot" /> Live WebSerial stream
-              </div>
-            )}
             {batchActive && (
               <button
                 className="btn btn-success btn-lg"
                 style={{
                   width: '100%',
-                  marginTop: 15,
+                  marginTop: 5,
                   background: '#10b981',
                   border: 'none',
                   color: 'white',
@@ -1814,14 +1128,14 @@ const DyeingMaterialForm = () => {
                   gap: 8
                 }}
                 onClick={handlePrint}
-                disabled={isProcessing || parseFloat(currentWeight) < 0.1 || waitingForRollRemoval}
+                disabled={isProcessing || !manualMeters || parseFloat(manualMeters) <= 0}
               >
                 <Printer size={18} /> Print Sticker & Save Roll
               </button>
             )}
           </div>
 
-          {/* Interactive Steps Card */}
+          {/* Workflow steps tracker */}
           <div className="step-tracker-card">
             <div className="card-header" style={{ borderBottom: '1px solid var(--border)' }}>
               <div className="card-title" style={{ fontSize: 13, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Workflow Steps</div>
@@ -1837,15 +1151,11 @@ const DyeingMaterialForm = () => {
               </div>
               <div className={`step-row ${activeSteps.step2 && !activeSteps.step3 ? 'active' : activeSteps.step3 ? 'completed' : ''}`}>
                 <div className="step-num">{activeSteps.step3 ? '✓' : '3'}</div>
-                <div className="step-label">Connect USB Weighing Scale or Demo Mode</div>
+                <div className="step-label">Click "Start Batch" to lock details</div>
               </div>
               <div className={`step-row ${activeSteps.step3 && !activeSteps.step4 ? 'active' : activeSteps.step4 ? 'completed' : ''}`}>
                 <div className="step-num">{activeSteps.step4 ? '✓' : '4'}</div>
-                <div className="step-label">Click "Start Batch" to lock details</div>
-              </div>
-              <div className={`step-row ${activeSteps.step4 && !activeSteps.step5 ? 'active' : activeSteps.step5 ? 'completed' : ''}`}>
-                <div className="step-num">{activeSteps.step5 ? '✓' : '5'}</div>
-                <div className="step-label">Place roll on scale ({currentRollNumber + 1} of {totalRollsInBatch}) & press ENTER to print</div>
+                <div className="step-label">Type meters & press ENTER to print roll {currentRollNumber + 1}</div>
               </div>
             </div>
           </div>
@@ -1853,7 +1163,7 @@ const DyeingMaterialForm = () => {
 
         {/* Right Side: Batch Config, Form Details, & Roll History */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Batch Configuration */}
+          {/* Batch config controls */}
           <div className="card">
             <div className="card-header">
               <div className="card-title">Batch Setup & Process Control</div>
@@ -1879,22 +1189,8 @@ const DyeingMaterialForm = () => {
                       setTotalRollsInBatch(1);
                     }
                   }}
-                  disabled={batchActive}
                 />
               </div>
-
-              {batchActive && (
-                <div className="form-group" style={{ width: 140 }}>
-                  <label className="form-label">Active Roll Number</label>
-                  <input
-                    className="form-control"
-                    type="number"
-                    value={formData.rollNumberInput}
-                    onChange={e => handleInputChange('rollNumberInput', e.target.value)}
-                    min="1"
-                  />
-                </div>
-              )}
 
               {!batchActive ? (
                 <button className="btn btn-primary btn-lg" onClick={startBatchProcess} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1913,44 +1209,15 @@ const DyeingMaterialForm = () => {
             </div>
           </div>
 
-          {/* Form Fields Card */}
+          {/* Form details input */}
           <div className="card">
             <div className="card-header">
-              <div className="card-title">Dyeing Roll Metadata Details</div>
+              <div className="card-title">Roll Metadata Details</div>
             </div>
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {/* Lot Number lookup section */}
-              <div className="form-group" style={{ borderBottom: '1px solid var(--border-light)', paddingBottom: 16, marginBottom: 6 }}>
-                <label className="form-label">Lot Number <span className="required">*</span></label>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <input
-                    className="form-control"
-                    placeholder="Enter Lot Number (e.g. 76038)"
-                    value={formData.lotNumber}
-                    onChange={e => handleInputChange('lotNumber', e.target.value)}
-                    disabled={batchActive}
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={handleFetchLotDetails}
-                    disabled={batchActive || isFetchingLot || !formData.lotNumber}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 120, justifyContent: 'center' }}
-                  >
-                    {isFetchingLot ? 'Searching...' : '🔍 Fetch Details'}
-                  </button>
-                </div>
-                {fetchError && (
-                  <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <AlertTriangle size={12} /> {fetchError}
-                  </div>
-                )}
-              </div>
-
               <div className="compact-form-row">
                 <div className="form-group">
-                  <label className="form-label">CMP Name <span className="required">*</span></label>
+                  <label className="form-label">CMF Name <span className="required">*</span></label>
                   <input className="form-control" placeholder="e.g. CMF-Fabric" value={formData.cmfName} onChange={e => handleInputChange('cmfName', e.target.value)} disabled={batchActive} />
                 </div>
                 <div className="form-group">
@@ -1964,36 +1231,36 @@ const DyeingMaterialForm = () => {
                   <label className="form-label">Group <span className="required">*</span></label>
                   <input className="form-control" placeholder="e.g. Knitted" value={formData.group} onChange={e => handleInputChange('group', e.target.value)} disabled={batchActive} />
                 </div>
-                <div className="form-group" style={{ display: 'flex', gap: 10, flex: 1 }}>
-                  <div style={{ flex: 1 }}>
-                    <label className="form-label">Issued Shade <span className="required">*</span></label>
-                    <input className="form-control" placeholder="Prefilled from Lot" value={formData.issuedShade} disabled={true} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="form-label">Received Shade <span className="required">*</span></label>
-                    <input className="form-control" placeholder="e.g. Navy Blue" value={formData.receivedShade} onChange={e => handleInputChange('receivedShade', e.target.value)} />
-                  </div>
+                <div className="form-group">
+                  <label className="form-label">Shade <span className="required">*</span></label>
+                  <input className="form-control" placeholder="e.g. Navy Blue" value={formData.shade} onChange={e => handleInputChange('shade', e.target.value)} disabled={batchActive} />
                 </div>
               </div>
 
               <div className="compact-form-row">
                 <div className="form-group">
+                  <label className="form-label">Lot Number <span className="required">*</span></label>
+                  <input className="form-control" placeholder="e.g. LOT-4509" value={formData.lotNumber} onChange={e => handleInputChange('lotNumber', e.target.value)} disabled={batchActive} />
+                </div>
+                <div className="form-group">
                   <label className="form-label">Bill Number <span className="required">*</span></label>
-                  <input className="form-control" placeholder="e.g. BILL-9921" value={formData.billNumber} onChange={e => handleInputChange('billNumber', e.target.value)} />
+                  <input className="form-control" placeholder="e.g. BILL-9921" value={formData.billNumber} onChange={e => handleInputChange('billNumber', e.target.value)} disabled={batchActive} />
+                </div>
+              </div>
+
+              <div className="compact-form-row">
+                <div className="form-group">
+                  <label className="form-label">Location <span className="required">*</span></label>
+                  <LocationPicker
+                    value={formData.location}
+                    onChange={val => handleInputChange('location', val)}
+                    disabled={batchActive}
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label"> Date <span className="required">*</span></label>
                   <input className="form-control" type="date" value={formData.date} onChange={e => handleInputChange('date', e.target.value)} disabled={batchActive} />
                 </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Location <span className="required">*</span></label>
-                <LocationPicker
-                  value={formData.location}
-                  onChange={val => handleInputChange('location', val)}
-                  disabled={batchActive}
-                />
               </div>
 
               <div className="compact-form-row">
@@ -2009,7 +1276,7 @@ const DyeingMaterialForm = () => {
             </div>
           </div>
 
-          {/* Processing and Sticker preview */}
+          {/* Printing overlay */}
           {isProcessing && (
             <div className="printing-overlay">
               <Printer className="animate-spin" size={20} />
@@ -2017,7 +1284,7 @@ const DyeingMaterialForm = () => {
             </div>
           )}
 
-          {/* Active / Completed Roll Listing */}
+          {/* Active / Completed Roll List */}
           {batchActive && (
             <div className="card">
               <div className="card-header">
@@ -2029,7 +1296,7 @@ const DyeingMaterialForm = () => {
                     <tr>
                       <th>Roll #</th>
                       <th>Barcode ID</th>
-                      <th>Weight</th>
+                      <th>Meters (MTR)</th>
                       <th>Printed Time</th>
                     </tr>
                   </thead>
@@ -2048,7 +1315,7 @@ const DyeingMaterialForm = () => {
                             {roll.barcodeId}
                             {roll.queued && <span className="queued-tag">⏳ Queued</span>}
                           </td>
-                          <td style={{ fontWeight: 700 }}>{roll.weight} KG</td>
+                          <td style={{ fontWeight: 700 }}>{roll.weight} MTR</td>
                           <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{roll.timestamp}</td>
                         </tr>
                       ))
@@ -2061,7 +1328,7 @@ const DyeingMaterialForm = () => {
         </div>
       </div>
 
-      {/* Stop Confirmation Modal */}
+      {/* Stop confirmation modal */}
       {showStopConfirm && (
         <div className="modal-overlay">
           <div className="modal modal-sm">
@@ -2082,4 +1349,4 @@ const DyeingMaterialForm = () => {
   );
 };
 
-export default DyeingMaterialForm;
+export default FabricStockMtr;

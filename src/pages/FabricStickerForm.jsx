@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store, BASE_URL } from '../store.js';
+import LocationPicker from '../components/LocationPicker.jsx';
 import {
   Scale, Printer, Play, Square, RotateCcw,
   CheckCircle2, AlertTriangle, AlertCircle,
@@ -14,9 +15,6 @@ const FabricStickerForm = () => {
 
   // Get logged in user data
   const [loggedInUser, setLoggedInUser] = useState(null);
-
-  // Shelves from warehouse settings
-  const [shelves, setShelves] = useState([]);
 
   // Main Form Data
   const [formData, setFormData] = useState({
@@ -243,7 +241,7 @@ const FabricStickerForm = () => {
     console.log(`📢 UI: ${message}`);
   };
 
-  // Load logged in user data and shelves
+  // Load logged in user data
   useEffect(() => {
     isMounted.current = true;
     const userData = localStorage.getItem('twms_user');
@@ -254,34 +252,11 @@ const FabricStickerForm = () => {
       setLoggedInUser({ name: 'Admin User', role: 'Admin' });
     }
 
-    // Load shelves for valid location selection
-    store.getShelves()
-      .then(data => {
-        if (isMounted.current) {
-          setShelves(data || []);
-        }
-      })
-      .catch(console.error);
-
     return () => {
       isMounted.current = false;
       cleanupAllResources();
     };
   }, []);
-
-  // Automatically filter and select a valid location based on total rolls in batch
-  useEffect(() => {
-    const reqRolls = parseInt(totalRollsInBatch) || 0;
-    const available = shelves.filter(s => (s.capacity - s.used) >= reqRolls);
-    if (available.length > 0) {
-      // If current selected location is not valid/available, select the first valid one
-      if (!available.some(s => s.id === formData.location)) {
-        setFormData(prev => ({ ...prev, location: available[0].id }));
-      }
-    } else {
-      setFormData(prev => ({ ...prev, location: '' }));
-    }
-  }, [totalRollsInBatch, shelves]);
 
   // Centralized cleanup function
   const cleanupAllResources = async () => {
@@ -357,7 +332,7 @@ const FabricStickerForm = () => {
 
     try {
       setIsLoadingSequence(true);
-      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id`, {
+      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id?type=material`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -405,7 +380,7 @@ const FabricStickerForm = () => {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id`, {
+      const response = await fetch(`${BASE_URL}/google-sheets/next-barcode-id?type=material`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -1870,26 +1845,18 @@ const FabricStickerForm = () => {
 
               <div className="compact-form-row">
                 <div className="form-group">
-                  <label className="form-label">Location (Shelf) <span className="required">*</span></label>
-                  <select className="form-control" value={formData.location} onChange={e => handleInputChange('location', e.target.value)} disabled={batchActive}>
-                    <option value="">Select Shelf</option>
-                    {shelves.filter(s => (s.capacity - s.used) >= (parseInt(totalRollsInBatch) || 0)).length === 0 && (
-                      <option value="" disabled>No space available for {totalRollsInBatch} rolls</option>
-                    )}
-                    {shelves
-                      .filter(s => (s.capacity - s.used) >= (parseInt(totalRollsInBatch) || 0))
-                      .map(s => (
-                        <option key={s.id} value={s.id}>
-                          {s.id} ({s.room} - Rack {s.rack} | Free: {s.capacity - s.used} rolls)
-                        </option>
-                      ))
-                    }
-                  </select>
-                </div>
-                <div className="form-group">
                   <label className="form-label"> Date <span className="required">*</span></label>
                   <input className="form-control" type="date" value={formData.date} onChange={e => handleInputChange('date', e.target.value)} disabled={batchActive} />
                 </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Location <span className="required">*</span></label>
+                <LocationPicker
+                  value={formData.location}
+                  onChange={val => handleInputChange('location', val)}
+                  disabled={batchActive}
+                />
               </div>
 
               <div className="compact-form-row">

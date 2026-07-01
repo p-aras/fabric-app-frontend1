@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReturnStickerGenerator from './ReturnStickerGenerator';
 import '../Design/FabricReceiving.css';
+import { BASE_URL } from '../store.js';
 
 const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
   const [issuedRolls, setIssuedRolls] = useState([]);
@@ -24,7 +25,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
   const [currentReturnData, setCurrentReturnData] = useState(null);
   const [pendingReturnRecords, setPendingReturnRecords] = useState([]);
   
-  const API_BASE_URL = 'https://fabric-backend-9aua.onrender.com/api/fabric-receiving';
+  const API_BASE_URL = `${BASE_URL}/fabric-receiving`;
 
   useEffect(() => {
     if (selectedJob) {

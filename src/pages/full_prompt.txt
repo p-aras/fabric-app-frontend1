@@ -1,0 +1,1389 @@
+<USER_REQUEST>
+in JobOrder component i want to add option for donwload the jobOrder in pdf format . i already pdf design code below i m giving u my another software jobOrder component u have to use the same design of JobOrder 
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+/** ====== set these ====== */
+const API_KEY = "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk";
+const SHEET_ID = "1fKSwGBIpzWEFk566WRQ4bzQ0anJlmasoY8TwrTLQHXI";
+const TAB_NAME = "JobOrder";
+// Add these tracking configuration variables
+const TRACKING_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzV1WU0QyYN1brvsX1GNttlehah1eQMsgpnBshjRXpf7GxW2KfFJyYNqPGJiclE0NRX/exec"; // Replace with your deployed Apps Script Web App URL
+const TRACKING_SHEET_ID = "1jTju43L6-M1_f-zl67IMsI-sj7RMiLXOXN6z0vzSyck"; // Your tracking sheet ID
+const TRACKING_TAB_NAME = "PDF_Log"; // Tab name for tracking
+
+/** ====== fetching limits ====== */
+const INITIAL_LIMIT = 2000;   // first load
+const LOAD_MORE_CHUNK = 1000; // "Load more" chunk size
+
+/** ====== sheet columns ====== */
+/** ====== sheet columns ====== */
+/** ====== sheet columns ====== */
+// Update this section around line 20
+// Update this section around line 20
+const HEADERS = [
+  "Job Order No","Date","Fabric","Brand","Shade","Size","Quantity","Unit",
+  "Party Name","Garment Type","Section","Season","Emb","Emb Details",
+  "Printing","Printing Details","Pattern","Style","Remarks","Direct Stitching",
+  "Submitted By","Image URL","Lot Number","Component","Priority",
+  "Tape/Lace", "Bottom Type", "Zip", "Sticker",
+  "Collar", "Bone", "FULL BAJU",
+  "FABRIC_SUPERVISOR", "Order No."  // Add these two new columns
+];
+// Function to log PDF generation to Google Sheets
+const logPdfGeneration = async (row, pdfType, status = "Generated", notes = "") => {
+  try {
+    const jobOrderNo = row?.["Job Order No"] || "";
+    const lotNumber = row?.["Lot Number"] || "";
+    const generatedBy = "JobOrders Component";
+    const fileName = `JobOrder_${jobOrderNo}_${new Date().toISOString().slice(0,10)}.pdf`;
+    
+    let ipAddress = "";
+    try {
+      const ipResponse = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipResponse.json();
+      ipAddress = ipData.ip;
+    } catch (e) {
+      console.log("Could not fetch IP:", e);
+    }
+    
+    const sessionId = Math.random().toString(36).substring(2, 15) + 
+                      Math.random().toString(36).substring(2, 15);
+    
+    const trackingData = {
+      trackingSheetId: TRACKING_SHEET_ID,
+      tabName: TRACKING_TAB_NAME,
+      jobOrderNo: jobOrderNo,
+      lotNumber: lotNumber,
+      generatedBy: generatedBy,
+      fileName: fileName,
+      ipAddress: ipAddress,
+      sessionId: sessionId,
+      status: status,
+      pdfType: pdfType,
+      notes: notes,
+      updateMainSheet: true,
+      mainSheetId: SHEET_ID,
+      mainTabName: TAB_NAME
+    };
+    
+    await fetch(TRACKING_WEB_APP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(trackingData)
+    });
+    
+    console.log(`PDF generation logged for ${pdfType}: ${jobOrderNo}`);
+  } catch (error) {
+    console.error("Failed to log PDF generation:", error);
+  }
+};
+/* ---------- helpers ---------- */
+async function loadJsPDF() {
+  const mod = await import("jspdf");
+  return mod.jsPDF || mod.default;
+}
+const pause = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+
+function withTimeout(promise, ms = 4000) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(""), ms);
+    promise.then((v) => { clearTimeout(t); resolve(v); })
+           .catch(()  => { clearTimeout(t); resolve(""); });
+  });
+}
+function drawStar(doc, x, y, size = 12) {
+  const spikeCount = 5;
+  const outerRadius = size;
+  const innerRadius = size / 2;
+  const rotation = Math.PI / 2 * 3;
+  
+  // Create points for the star
+  const points = [];
+  for (let i = 0; i < spikeCount; i++) {
+    // Outer point
+    points.push([
+      x + Math.cos(rotation + i * 2 * Math.PI / spikeCount) * outerRadius,
+      y + Math.sin(rotation + i * 2 * Math.PI / spikeCount) * outerRadius
+    ]);
+    
+    // Inner point
+    points.push([
+      x + Math.cos(rotation + (i + 0.5) * 2 * Math.PI / spikeCount) * innerRadius,
+      y + Math.sin(rotation + (i + 0.5) * 2 * Math.PI / spikeCount) * innerRadius
+    ]);
+  }
+  
+  // Set drawing properties
+  doc.setFillColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  
+  // Create a polygon path - use lowercase 'f' for fill
+  doc.setLineJoin('miter');
+  doc.setLineCap('butt');
+  
+  // Start the path at the first point
+  doc.moveTo(points[0][0], points[0][1]);
+  
+  // Draw lines to all other points
+  for (let i = 1; i < points.length; i++) {
+    doc.lineTo(points[i][0], points[i][1]);
+  }
+  
+  // Close the path back to the start
+  doc.lineTo(points[0][0], points[0][1]);
+  
+  // Fill and stroke the path
+  doc.fill();    // Fill the shape
+  doc.stroke();  // Draw the outline
+}
+
+function tryParseDateToISO(s) {
+  if (!s) return "";
+  const d1 = new Date(s);
+  if (!isNaN(d1)) return d1.toISOString();
+  const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (m) {
+    const dd = Number(m[1]), mm = Number(m[2]),
+      yyyy = Number(m[3] < 100 ? 2000 + Number(m[3]) : m[3]);
+    const d2 = new Date(yyyy, mm - 1, dd);
+    if (!isNaN(d2)) return d2.toISOString();
+  }
+  return "";
+}
+function pickDateISO(row) {
+  const candidates = [row["Created At (ISO)"], row["Date"]].filter(Boolean);
+  for (const s of candidates) {
+    const iso = tryParseDateToISO(s);
+    if (iso) return iso;
+  }
+  return "";
+}
+function normalizePriority(v) {
+  const s = String(v || "").trim().toUpperCase();
+  
+  // Check for LOT REPEATED or REPEATED (with anything after it)
+  if (s.includes("REPEATED") || s.includes("LOT_REPEATED")) {
+    return ""; // Return empty string - will show as "—" in the UI
+  }
+  
+  // Check for regular priorities
+  if (s.startsWith("H")) return "HIGH";
+  if (s.startsWith("M")) return "MEDIUM";
+  if (s.startsWith("L")) return "LOW";
+  
+  return "";
+}
+function priorityClass(level) {
+  switch (level) {
+    case "HIGH": return "jox-prio jox-prio--high";
+    case "MEDIUM": return "jox-prio jox-prio--med";
+    case "LOW": return "jox-prio jox-prio--low";
+    default: return "jox-prio";
+  }
+}
+
+function formatDateForPdf(input) {
+  const iso = tryParseDateToISO(input);
+  if (!iso) return input || "";
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { year:"numeric", month:"short", day:"2-digit" });
+}
+function getCell(row, idx) {
+  if (idx == null) return "";
+  return (row[idx] ?? "").toString().trim();
+}
+function csvCell(v) {
+  const s = String(v ?? "");
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+function formatCell(header, value) {
+  if (header === "Quantity" && typeof value === "number") {
+    return new Intl.NumberFormat().format(value);
+  }
+  if ((header === "Date" || header === "Created At (ISO)") && value) {
+    const d = new Date(value);
+    if (!isNaN(d)) return d.toLocaleDateString();
+  }
+  return value ?? "";
+}
+function extractDriveFileId(url) {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/file\/d\/([^/]+)/) || u.search.match(/[?&]id=([^&]+)/);
+    return m ? m[1] : "";
+  } catch { return ""; }
+}
+function driveUcUrl(fileId) {
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+}
+function getEmbeddableImageSrc(raw) {
+  const s = (raw || "").toString().trim();
+  if (!s) return "";
+  const id = extractDriveFileId(s);
+  if (id) return `https://drive.google.com/file/d/${id}/preview`;
+  return s;
+}
+
+/** light image loader for jsPDF (downscale, jpeg) */
+async function loadImageAsBase64ForPdf(url, opts = {}) {
+  return new Promise((resolve) => {
+    try {
+      const fileId = extractDriveFileId(url);
+      const direct = fileId ? driveUcUrl(fileId) : (url || "").toString().trim();
+      if (!direct) return resolve("");
+
+      const clean = direct.replace(/^https?:\/\//, "");
+      const proxied = `https://images.weserv.nl/?url=${encodeURIComponent(clean)}`;
+
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          // A4 @ 72dpi: content width ~ 500–520pt; 880px is plenty for print
+          const maxW = opts.maxWidth || 880;
+          const maxH = opts.maxHeight || 880;
+          let { width, height } = img;
+
+          if (width > maxW || height > maxH) {
+            const r = Math.min(maxW / width, maxH / height);
+            width = Math.max(1, Math.floor(width * r));
+            height = Math.max(1, Math.floor(height * r));
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return resolve("");
+              const fr = new FileReader();
+              fr.onloadend = () => resolve(fr.result || "");
+              fr.readAsDataURL(blob);
+            },
+            "image/jpeg",
+            0.65
+          );
+        } catch { resolve(""); }
+      };
+      img.onerror = () => resolve("");
+      img.src = proxied;
+    } catch { resolve(""); }
+  });
+}
+
+function parseShades(value) {
+  return String(value || "")
+    .split(/[,\/&+]|(?:\s{2,})/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+function cmpSmart(a, b) {
+  const A = String(a ?? "").trim();
+  const B = String(b ?? "").trim();
+  // try numeric compare if both contain a number
+  const nA = Number((A.match(/[\d.]+/) || [""])[0]);
+  const nB = Number((B.match(/[\d.]+/) || [""])[0]);
+  const bothNum = Number.isFinite(nA) && Number.isFinite(nB);
+  if (bothNum) return nA - nB;
+  return A.localeCompare(B, undefined, { numeric: true, sensitivity: "base" });
+}
+function inRange(value, start, end) {
+  if (!start && !end) return true;
+  if (start && cmpSmart(value, start) < 0) return false;
+  if (end && cmpSmart(value, end) > 0) return false;
+  return true;
+}
+
+/* ========== Main Component (lighter PDF) ========== */
+const JobOrders = () => {
+  const navigate = useNavigate();
+
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [pdfLandscapeBusy, setPdfLandscapeBusy] = useState(null);
+
+  // fetch window control
+  const [rowLimit, setRowLimit] = useState(INITIAL_LIMIT);
+  const [lastRow, setLastRow] = useState(null);
+
+  // UI state
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState({ key: "Job Order No", dir: "asc" });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [joStart, setJoStart] = useState("");
+const [joEnd, setJoEnd] = useState("");
+const [lotStart, setLotStart] = useState("");
+const [lotEnd, setLotEnd] = useState("");
+
+  // per-row PDF busy status (stores JO number; null = idle)
+  const [pdfBusyId, setPdfBusyId] = useState(null);
+
+  const [fFabric, setFFabric] = useState("");
+  const [fBrand, setFBrand] = useState("");
+  const [fShade, setFShade] = useState("");
+  const [fParty, setFParty] = useState("");
+  const [fSeason, setFSeason] = useState("");
+  const [fSection, setFSection] = useState("");
+  const [fPattern, setFPattern] = useState("");
+  const [fLot, setFLot] = useState("");
+  const [fUnit, setFUnit] = useState("");
+  const [fDS, setFDS] = useState("");
+  const [fSubmittedBy, setFSubmittedBy] = useState("");
+  const [pdfBatchBusy, setPdfBatchBusy] = useState(null);
+  const [fPriority, setFPriority] = useState("");
+const [fTapeLace, setFTapeLace] = useState("");
+const [fBottomType, setFBottomType] = useState("");
+const [fZip, setFZip] = useState("");
+const [fSticker, setFSticker] = useState(""); // Add this line
+const [fCollar, setFCollar] = useState("");
+const [fBone, setFBone] = useState("");
+const [fFullBaju, setFFullBaju] = useState("");
+
+const [generatedLots, setGeneratedLots] = useState(new Set()); // Track which lots have PDFs generated
+const [loadingGeneratedLots, setLoadingGeneratedLots] = useState(false);
+
+
+  const [preview, setPreview] = useState({ open: false, src: "", alt: "" });
+// Update around line 105
+const VISIBLE_HEADERS = [
+  "Job Order No","Date","Party Name","Fabric","Shade","Quantity","Unit","Lot Number",
+  "Priority", "Sticker", "Collar", "Bone", "FULL BAJU",
+  "FABRIC_SUPERVISOR", "Order No."  // Add here to show in main table
+];
+  const DETAIL_HEADERS = HEADERS.filter((h) => !VISIBLE_HEADERS.includes(h));
+  const [expanded, setExpanded] = useState(() => new Set());
+
+  /** ====== fetch only REAL rows ====== */
+  async function getLastPopulatedRow(signal) {
+    const probe = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(
+      TAB_NAME
+    )}!A:A?majorDimension=ROWS&key=${API_KEY}`;
+    const r = await fetch(probe, { signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    return j.values?.length || 1;
+  }
+
+const fetchData = async ({ isRefresh = false, signal } = {}) => {
+  try {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    setError("");
+
+    const last = await getLastPopulatedRow(signal);
+    setLastRow(last);
+    const upto = Math.min(last, rowLimit);
+
+    // IMPORTANT: Make sure the range includes enough columns
+    // AG = column 33 (for 33 columns including Full Baju)
+    // Using AU (column 47) gives plenty of room for future columns
+    const range = `${encodeURIComponent(TAB_NAME)}!A1:AW${upto}`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
+    const res = await fetch(url, { signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+    const values = data.values || [];
+    if (values.length === 0) throw new Error("No data found.");
+    
+    const headerRow = values[0].map((h) => (h || "").trim());
+    console.log("Sheet headers found:", headerRow); // Debug: see what columns exist
+    
+    const body = values.slice(1);
+
+    const norm = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
+    const hIndex = {};
+    headerRow.forEach((h, i) => {
+      const exact = h.trim();
+      const normalized = norm(h);
+      if (!(exact in hIndex)) hIndex[exact] = i;
+      if (!(normalized in hIndex)) hIndex[normalized] = i;
+    });
+
+    console.log("Column index for 'Full Baju':", hIndex["Full Baju"]); // Debug: check if column found
+
+    const parsed = body
+      .filter((r) => r.some((cell) => (cell ?? "").toString().trim() !== ""))
+      .map((r, i) => {
+        const obj = {};
+        HEADERS.forEach((H) => {
+          obj[H] = getCell(r, hIndex[H]);
+        });
+        
+        if (obj["Quantity"] !== "") {
+          const n = Number(obj["Quantity"]);
+          if (Number.isFinite(n)) obj["Quantity"] = n;
+        }
+        
+        obj.__dateISO = pickDateISO(obj);
+        obj.__sheetRow = i + 2; // header = 1
+        
+        // Debug: log first row's Full Baju value
+        if (i === 0) {
+          console.log("First row - Full Baju value:", obj["Full Baju"]);
+          console.log("First row - All values:", obj);
+        }
+        
+        return obj;
+      });
+
+    console.log("Total rows parsed:", parsed.length);
+    console.log("Sample Full Baju values:", parsed.slice(0, 5).map(r => r["Full Baju"]));
+    
+    setRows(parsed);
+  } catch (e) {
+    if (e?.name !== "AbortError") {
+      setError(`Failed to load: ${e.message}`);
+      console.error("Fetch error:", e);
+    }
+  } finally {
+    if (isRefresh) setRefreshing(false); else setLoading(false);
+  }
+};
+
+  useEffect(() => {
+    const c = new AbortController();
+    fetchData({ isRefresh: false, signal: c.signal });
+    return () => c.abort();
+  }, [rowLimit]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") setPreview({ open: false, src: "", alt: "" }); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+// Add this new function to fetch already generated lots from PDF_log
+// Add this new function to fetch successfully generated lots from PDF_log
+// Fetch only Lot Numbers from the tracking sheet
+// Fetch only Lot Numbers from the tracking sheet
+// Fetch successfully generated lots from the tracking sheet
+const fetchGeneratedLots = async () => {
+  try {
+    setLoadingGeneratedLots(true);
+    
+    // Fetch all data from the tracking sheet
+    const range = `${encodeURIComponent(TRACKING_TAB_NAME)}!A:Z`; // Fetch up to column Z
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${TRACKING_SHEET_ID}/values/${range}?key=${API_KEY}`;
+    
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
+    const data = await res.json();
+    const values = data.values || [];
+    
+    if (values.length === 0) {
+      console.log("No data found in tracking sheet");
+      setGeneratedLots(new Set());
+      return;
+    }
+    
+    console.log("Tracking sheet headers:", values[0]);
+    
+    // Find the column indices
+    const headers = values[0] || [];
+    let lotNumberColIndex = -1;
+    let statusColIndex = -1;
+    let jobOrderColIndex = -1;
+    
+    // Map headers to find correct columns
+    headers.forEach((header, index) => {
+      const headerLower = (header || "").toString().toLowerCase().trim();
+      
+      // Look for Lot Number column
+      if (headerLower.includes("lot") && headerLower.includes("number")) {
+        lotNumberColIndex = index;
+        console.log(`Found Lot Number column at index ${index}: "${header}"`);
+      } else if (headerLower === "lot" || headerLower === "lot no" || headerLower === "lot #") {
+        lotNumberColIndex = index;
+        console.log(`Found Lot Number column at index ${index}: "${header}"`);
+      }
+      
+      // Look for Status column
+      if (headerLower.includes("status")) {
+        statusColIndex = index;
+        console.log(`Found Status column at index ${index}: "${header}"`);
+      }
+      
+      // Look for Job Order column (optional, for debugging)
+      if (headerLower.includes("job") || headerLower.includes("order")) {
+        jobOrderColIndex = index;
+      }
+    });
+    
+    // If Lot Number column not found by header, try common positions
+    if (lotNumberColIndex === -1) {
+      console.warn("Lot Number column not found in headers, trying common positions");
+      // Try common positions (A=0, B=1, C=2, D=3) - usually Lot Number is in column C (index 2)
+      const possibleIndices = [2, 1, 3, 0]; // C, B, D, A in order of likelihood
+      
+      for (const idx of possibleIndices) {
+        if (idx < headers.length) {
+          lotNumberColIndex = idx;
+          console.log(`Using column ${String.fromCharCode(65 + idx)} as Lot Number column (header: "${headers[idx] || 'empty'}")`);
+          break;
+        }
+      }
+    }
+    
+    // If still not found, default to column C (index 2)
+    if (lotNumberColIndex === -1) {
+      console.warn("Could not determine Lot Number column, defaulting to column C (index 2)");
+      lotNumberColIndex = 2;
+    }
+    
+    // Collect all lot numbers with successful status
+    const lots = new Set();
+    let successCount = 0;
+    let totalRows = 0;
+    let failedCount = 0;
+    let startedCount = 0;
+    
+    // Start from index 1 to skip header row
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (!row || row.length === 0) continue;
+      
+      totalRows++;
+      
+      // Get lot number if available
+      if (row.length > lotNumberColIndex) {
+        const lot = row[lotNumberColIndex]?.toString().trim();
+        
+        if (lot) {
+          // Check status if status column exists
+          let includeLot = false;
+          
+          if (statusColIndex !== -1 && row.length > statusColIndex) {
+            const status = row[statusColIndex]?.toString().toLowerCase().trim() || "";
+            
+            // Only include if status is successful (not "Failed" or "Started")
+            if (status === "generated" || status === "success" || status === "completed" || status === "done") {
+              includeLot = true;
+              successCount++;
+            } else if (status === "failed") {
+              failedCount++;
+            } else if (status === "started") {
+              startedCount++;
+            } else if (status) {
+              // Unknown status - include it to be safe
+              includeLot = true;
+              console.log(`Unknown status "${status}" for lot ${lot} - including it`);
+            }
+          } else {
+            // If no status column, include all lots that appear
+            includeLot = true;
+          }
+          
+          if (includeLot) {
+            lots.add(lot);
+          }
+        }
+      }
+    }
+    
+    setGeneratedLots(lots);
+    console.log(`=== Tracking Summary ===`);
+    console.log(`Total rows in tracking sheet: ${totalRows}`);
+    console.log(`Lots with successful PDFs: ${lots.size}`);
+    console.log(`Success count: ${successCount}, Failed: ${failedCount}, Started: ${startedCount}`);
+    console.log(`Sample of tracked lots:`, Array.from(lots).slice(0, 10));
+    
+  } catch (error) {
+    console.error("Failed to fetch generated lots:", error);
+    setGeneratedLots(new Set()); // Reset on error
+  } finally {
+    setLoadingGeneratedLots(false);
+  }
+};
+useEffect(() => {
+  const c = new AbortController();
+  fetchData({ isRefresh: false, signal: c.signal });
+  fetchGeneratedLots(); // Fetch generated lots on component mount
+  return () => c.abort();
+}, [rowLimit]);
+  /* --------- Unique options --------- */
+  const uniqueOptions = (key) => {
+    const s = new Set();
+    for (const r of rows) {
+      const v = (r[key] ?? "").toString().trim();
+      if (v) s.add(v);
+    }
+    return Array.from(s).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
+  };
+  const fabricOpts = useMemo(() => uniqueOptions("Fabric"), [rows]);
+  const brandOpts = useMemo(() => uniqueOptions("Brand"), [rows]);
+  const shadeOpts = useMemo(() => uniqueOptions("Shade"), [rows]);
+  const partyOpts = useMemo(() => uniqueOptions("Party Name"), [rows]);
+  const seasonOpts = useMemo(() => uniqueOptions("Season"), [rows]);
+  const sectionOpts = useMemo(() => uniqueOptions("Section"), [rows]);
+  const unitOpts = useMemo(() => uniqueOptions("Unit"), [rows]);
+  const dsOpts = useMemo(() => uniqueOptions("Direct Stitching"), [rows]);
+  const patternOpts = useMemo(() => uniqueOptions("Pattern"), [rows]);
+  const submittedByOpts = useMemo(() => uniqueOptions("Submitted By"), [rows]);
+  const lotOpts = useMemo(() => uniqueOptions("Lot Number"), [rows]);
+  const priorityOpts = useMemo(() => uniqueOptions("Priority"), [rows]);
+// Add these near other uniqueOptions calls
+const tapeLaceOpts = useMemo(() => uniqueOptions("Tape/Lace"), [rows]);
+const bottomTypeOpts = useMemo(() => uniqueOptions("Bottom Type"), [rows]);
+const zipOpts = useMemo(() => uniqueOptions("Zip"), [rows]);
+const stickerOpts = useMemo(() => uniqueOptions("Sticker"), [rows]); // Add this line
+// Add these near other uniqueOptions calls
+const collarOpts = useMemo(() => uniqueOptions("Collar"), [rows]);
+const boneOpts = useMemo(() => uniqueOptions("Bone"), [rows]);
+const fullBajuOpts = useMemo(() => uniqueOptions("FULL BAJU"), [rows]);  // Changed to "FULL BAJU"
+
+  /* --------- Filter + search --------- */
+ const filtered = useMemo(() => {
+  const needle = q.trim().toLowerCase();
+
+  return rows.filter((row) => {
+    // text search across all HEADERS
+    const matchesText = !needle
+      ? true
+      : HEADERS.some((H) => String(row[H] ?? "").toLowerCase().includes(needle));
+
+    // exact-match select filters
+    const matchesFabric      = !fFabric      || (row["Fabric"] ?? "") === fFabric;
+    const matchesBrand       = !fBrand       || (row["Brand"] ?? "") === fBrand;
+    const matchesShade       = !fShade       || (row["Shade"] ?? "") === fShade;
+    const matchesParty       = !fParty       || (row["Party Name"] ?? "") === fParty;
+    const matchesSeason      = !fSeason      || (row["Season"] ?? "") === fSeason;
+    const matchesSection     = !fSection     || (row["Section"] ?? "") === fSection;
+    const matchesUnit        = !fUnit        || (row["Unit"] ?? "") === fUnit;
+    const matchesDS          = !fDS          || (row["Direct Stitching"] ?? "") === fDS;
+    const matchesLotSelect   = !fLot         || (row["Lot Number"] ?? "") === fLot;
+    const matchesPattern     = !fPattern     || (row["Pattern"] ?? "") === fPattern;
+    const matchesSubmittedBy = !fSubmittedBy || (row["Submitted By"] ?? "") === fSubmittedBy;
+    const matchesPriority = !fPriority || (row["Priority"] ?? "") === fPriority;
+    const matchesTapeLace = !fTapeLace || (row["Tape/Lace"] ?? "") === fTapeLace;
+    const matchesBottomType = !fBottomType || (row["Bottom Type"] ?? "") === fBottomType;
+    const matchesZip = !fZip || (row["Zip"] ?? "") === fZip;
+    const matchesSticker = !fSticker || (row["Sticker"] ?? "") === fSticker;
+    const matchesCollar = !fCollar || (row["Collar"] ?? "") === fCollar;  // <-- ADDED
+    const matchesBone = !fBone || (row["Bone"] ?? "") === fBone;          // <-- ADDED
+   const matchesFullBaju = !fFullBaju || (row["FULL BAJU"] ?? "") === fFullBaju;  // Changed to "FULL BAJU"
+
+    // NEW: inclusive range filters for JO No and Lot Number
+    const matchesJoRange  = inRange(row["Job Order No"], joStart, joEnd);
+    const matchesLotRange = inRange(row["Lot Number"], lotStart, lotEnd);
+
+    return (
+      matchesText &&
+      matchesFabric &&
+      matchesBrand &&
+      matchesShade &&
+      matchesParty &&
+      matchesSeason &&
+      matchesSection &&
+      matchesUnit &&
+      matchesDS &&
+      matchesLotSelect &&
+      matchesPattern &&
+      matchesSubmittedBy &&
+      matchesJoRange &&
+      matchesLotRange &&
+      matchesTapeLace &&
+      matchesBottomType &&
+      matchesZip &&
+      matchesSticker &&
+      matchesCollar &&      // <-- ADDED
+      matchesBone &&  
+        matchesFullBaju &&      // <-- ADDED
+      matchesPriority
+    );
+  });
+}, [
+  rows, q,
+  fFabric, fBrand, fShade, fParty, fSeason, fSection, fUnit, fDS, fLot,
+  fPattern, fSubmittedBy, fPriority,
+  fTapeLace, fBottomType, fZip, fSticker,
+  fCollar, fBone,          // <-- ADDED
+  joStart, joEnd, lotStart, lotEnd
+]);
+  /* --------- Sorting --------- */
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    const { key, dir } = sort;
+    const f = dir === "asc" ? 1 : -1;
+
+    arr.sort((a, b) => {
+      if (key === "Date" || key === "Created At (ISO)") {
+        const A = a.__dateISO || a[key] || "";
+        const B = b.__dateISO || b[key] || "";
+        return A.localeCompare(B) * f;
+      }
+      if (key === "Job Order No") {
+        const A = String(a[key] ?? "");
+        const B = String(b[key] ?? "");
+        return A.localeCompare(B, undefined, { numeric: true, sensitivity: "base" }) * f;
+      }
+      if (key === "Quantity") {
+        const A = Number(a[key]);
+        const B = Number(b[key]);
+        if (Number.isFinite(A) && Number.isFinite(B)) return (A - B) * f;
+      }
+      return String(a[key] ?? "").localeCompare(String(b[key] ?? ""), undefined, { numeric: true }) * f;
+    });
+    return arr;
+  }, [filtered, sort]);
+
+  /* --------- Pagination --------- */
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const pageSafe = Math.min(page, totalPages);
+  const start = (pageSafe - 1) * pageSize;
+  const paged = sorted.slice(start, start + pageSize);
+
+  const clickHeader = (H) => {
+    setPage(1);
+    setSort((prev) => {
+      if (prev.key === H) return { key: H, dir: prev.dir === "asc" ? "desc" : "asc" };
+      return { key: H, dir: "asc" };
+    });
+  };
+
+  const exportCsv = () => {
+    const rowsCsv = sorted.map((r) => HEADERS.map((H) => csvCell(r[H])).join(","));
+    const csv = [HEADERS.join(","), ...rowsCsv].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `job_orders_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+const clearFilters = () => {
+  setFFabric(""); setFBrand(""); setFShade(""); setFParty(""); setFSeason(""); setFSection("");
+  setFPattern(""); setFSubmittedBy(""); setFUnit(""); setFDS(""); setFLot("");
+  setFPriority(""); 
+  setFTapeLace(""); setFBottomType(""); setFZip(""); setFSticker("");
+  setFCollar("");      
+  setFBone("");        
+  setFFullBaju("");    // <-- ADDED
+  setQ(""); setPage(1);
+  setJoStart(""); setJoEnd("");
+  setLotStart(""); setLotEnd("");
+};
+const exportLandscapePages = async () => {
+  if (pdfLandscapeBusy) return;
+  setPdfLandscapeBusy(true);
+
+  try {
+    await pause(0);
+    
+    // Load jsPDF - using your existing method
+    const jsPDFConstructor = await loadJsPDF();
+
+    // Create main document
+    const doc = new jsPDFConstructor({
+      orientation: "landscape",
+      unit: "pt",
+      format: "a3",
+      compress: true,
+    });
+
+    // ====== LANDSCAPE PRODUCTION TABLE PAGE FUNCTION ======
+  const renderLandscapeTablePage = async (doc, row, isFirstPage = false) => {
+      // For first row, use existing page. For subsequent rows, create new page
+      if (!isFirstPage) {
+        try {
+          if (typeof doc.addPage === 'function') {
+            doc.addPage("a4", "landscape");
+          }
+        } catch (error) {
+          console.warn("Could not add page:", error);
+        }
+      }
+      
+      const LANDSCAPE_W = doc.internal.pageSize.getWidth();
+      const LANDSCAPE_H = doc.internal.pageSize.getHeight();
+      
+      // ====== SHADES INFORMATION ======
+      const parseShadesForTable = (value) => {
+        return String(value || "")
+          .split(/[,;|/]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+      };
+      
+      const shades = parseShadesForTable(row["Shade"] || "");
+      
+      // Parse sizes for column headers
+      const parseSizes = (sizeText) => {
+        if (!sizeText || sizeText === "—") return [];
+        const sizes = String(sizeText).split(/[,;|/]+/).map(s => s.trim()).filter(Boolean);
+        return sizes;
+      };
+      
+      const sizes = parseSizes(row["Size"] || "");
+      
+      // Calculate table dimensions - REDUCED MARGINS
+      const M = 25; // Reduced from 42 to 25 to give more space
+      const tableX = M;
+      const tableWidth = LANDSCAPE_W - 2 * M;
+      const tableMaxHeight = LANDSCAPE_H - 100 - 90;
+      
+      const ROW_HEIGHT = 36;
+      const HEADER_HEIGHT = ROW_HEIGHT * 1.1;
+      
+      const maxRowsPerPage = Math.floor(tableMaxHeight / ROW_HEIGHT) - 1;
+      const colorsPerPage = Math.min(7, maxRowsPerPage - 1);
+      
+      const shadeBatches = [];
+      for (let i = 0; i < shades.length; i += colorsPerPage) {
+        shadeBatches.push(shades.slice(i, i + colorsPerPage));
+      }
+      
+      if (shadeBatches.length === 0) {
+        shadeBatches.push([]);
+      }
+      
+      const C = {
+        black: [0, 0, 0],
+        white: [255, 255, 255],
+      };
+      
+      const setFont = (weight, size) => {
+        doc.setFont("Helvetica", weight);
+        doc.setFontSize(size);
+        doc.setTextColor(...C.black);
+      };
+      
+      const val = (k) => (row?.[k] ?? "").toString().trim() || "—";
+      const joNum = val("Job Order No");
+      
+      // Helper function to format date
+    // Helper function to format date as "9 Dec 2026"
+const formatJobDate = (dateValue) => {
+  if (!dateValue) return "—";
+  
+  // Try to parse different date formats
+  let date;
+  
+  // Try parsing as "9/27/202" format (month/day/year)
+  if (typeof dateValue === 'string') {
+    const parts = dateValue.split('/');
+    if (parts.length === 3) {
+      const month = parseInt(parts[0], 10);
+      const day = parseInt(parts[1], 10);
+      let year = parseInt(parts[2], 10);
+      
+      // Handle 3-digit year (like 202 for 2020, 226 for 2026)
+      if (year < 1000) {
+        // Assuming 2000s for years like 202, 226
+        year = 2000 + year;
+      }
+      
+      // Return formatted as "27 Sep 2022"
+      if (!isNaN(month) && !isNaN(day) && !isNaN(year)) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthName = monthNames[month - 1] || '';
+        return `${day} ${monthName} ${year}`;
+      }
+    }
+  }
+  
+  // Fallback to original value
+  return String(dateValue);
+};
+
+// OR update the existing vDate function to accept row parameter:
+const vDate = (k, rowData) => {
+  const value = rowData?.[k];
+  if (!value) return "—";
+  
+  // Try to parse different date formats
+  let date;
+  
+  // Try parsing as "9/27/202" format (month/day/year)
+  if (typeof value === 'string') {
+    const parts = value.split('/');
+    if (parts.length === 3) {
+      const month = parseInt(parts[0], 10);
+      const day = parseInt(parts[1], 10);
+      let year = parseInt(parts[2], 10);
+      
+      // Handle 3-digit year
+      if (year < 1000) {
+        year = 2000 + year;
+      }
+      
+      // Return formatted as "27 Sep 2022"
+      if (!isNaN(month) && !isNaN(day) && !isNaN(year)) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthName = monthNames[month - 1] || '';
+        return `${day} ${monthName} ${year}`;
+      }
+    }
+  }
+  
+  // Fallback: try the existing method
+  const iso = tryParseDateToISO(value);
+  if (!iso) return value;
+  const d = new Date(iso);
+  
+  // Format: "27 Dec 2026"
+  const day = d.getDate(); // No leading zero
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const year = d.getFullYear();
+  
+  return `${day} ${month} ${year}`;
+};
+      
+      // Helper function to shorten text
+      const shortenText = (text, maxLength) => {
+        if (!text || text === "—") return "—";
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength - 3) + "...";
+      };
+      
+
+const drawPageHeader = (pageNumber, totalPages) => {
+  // Add top margin
+  const TOP_MARGIN = 19; // Add 15pt margin from top
+  
+  // Set white background for header area - extend height by TOP_MARGIN
+  doc.setFillColor(...C.white);
+  doc.rect(0, 0, LANDSCAPE_W, 85 + TOP_MARGIN, "F");
+  
+  const quantity = val("Quantity");
+  const unit = val("Unit") || "sets";
+  const lotNumber = val("Lot Number");
+  
+  // LEFT SIDE: Basic Info + Style - Add TOP_MARGIN to all Y positions
+  let leftY = 22 + TOP_MARGIN;
+  
+  setFont("bold", 10);
+  doc.text(`JOB: ${joNum} | ${vDate("Date", row)}`, M, leftY);
+  leftY += 14;
+  
+  // STYLE on left side
+  const style = val("Style");
+  setFont("normal", 10);
+  doc.text(`STYLE: ${style}`, M, leftY);
+  leftY += 14;
+  
+  if (quantity) {
+    setFont("bold", 10);
+    doc.text(`QTY: ${quantity} ${unit}`, M, leftY);
+    leftY += 14;
+  }
+  const season = val("Season");
+if (season && season !== "—") {
+  setFont("normal", 9);
+  doc.text(`SEASON: ${season}`, M, leftY);
+  leftY += 12;
+}
+   const section = val("Section");
+  if (section && section !== "—") {
+    setFont("normal", 9);
+    doc.text(`SECTION: ${section}`, M, leftY);
+    leftY += 12;
+  }
+  
+  // RIGHT SIDE: Brand + NEW FIELDS (Tape/Lace, Zip, Bottom Type) - Add TOP_MARGIN
+  let rightY = 22 + TOP_MARGIN;
+  
+  setFont("bold", 10);
+  const brand = val("Brand");
+  doc.text(`BRAND: ${brand}`, LANDSCAPE_W - M, rightY, { align: "right" });
+  rightY += 14;
+  
+  // NEW FIELDS: Tape/Lace, Zip, Bottom Type
+  const tapeLace = val("Tape/Lace") || val("Tape Lace") || val("Tape") || val("Lace") || "—";
+  const zip = val("Zip") || val("Zipper") || "—";
+  const bottomType = val("Bottom Type") || val("Bottom") || "—";
+  
+  // Add Tape/Lace if available
+  if (tapeLace && tapeLace !== "—") {
+    setFont("normal", 9);
+    doc.text(`Tape/Lace: ${shortenText(tapeLace, 20)}`, LANDSCAPE_W - M, rightY, { align: "right" });
+    rightY += 12;
+  }
+  
+  // Add Zip if available
+  if (zip && zip !== "—") {
+    setFont("normal", 9);
+    doc.text(`Zip: ${shortenText(zip, 20)}`, LANDSCAPE_W - M, rightY, { align: "right" });
+    rightY += 12;
+  }
+  
+  // Add Bottom Type if available
+  if (bottomType && bottomType !== "—") {
+    setFont("normal", 9);
+    doc.text(`Bottom: ${shortenText(bottomType, 20)}`, LANDSCAPE_W - M, rightY, { align: "right" });
+    rightY += 12;
+  }
+  
+  // Pattern | Garment Type on right side
+  setFont("normal", 9);
+  const pattern = val("Pattern");
+  const garmentType = val("Garment Type");
+  const patternGarment = `${pattern} | ${garmentType}`;
+  if (patternGarment !== "— | —") {
+    doc.text(patternGarment, LANDSCAPE_W - M, rightY, { align: "right" });
+  }
+  
+  // CENTER: Main Heading with LOT NUMBER - Add TOP_MARGIN
+  let centerY = 22 + TOP_MARGIN;
+  
+  setFont("bold", 16);
+  doc.text("CUTTING TABLE ______", LANDSCAPE_W / 2, centerY, { align: "center" });
+  centerY += 16;
+  
+  // LOT NUMBER in center
+  setFont("bold", 14);
+  doc.text(`LOT NUMBER: ${lotNumber}`, LANDSCAPE_W / 2, centerY, { align: "center" });
+  centerY += 16;
+  
+  // Fabric information
+  setFont("bold", 10);
+  const fabric = val("Fabric");
+  doc.text(`Fabric: ${fabric}`, LANDSCAPE_W / 2, centerY, { align: "center" });
+  centerY += 14;
+  
+  // REMARKS
+  setFont("normal", 9);
+  const remarksText = row?.["Remarks"] ? String(row["Remarks"]).trim() : "";
+  if (remarksText && remarksText !== "") {
+    const maxRemarksLength = 80;
+    const displayRemarks = remarksText.length > maxRemarksLength 
+      ? remarksText.substring(0, maxRemarksLength - 3) + "..." 
+      : remarksText;
+    
+    doc.text(`Remarks: ${displayRemarks}`, LANDSCAPE_W / 2, centerY, { align: "center" });
+    centerY += 14;
+  }
+  
+  // Calculate header height - Add TOP_MARGIN to base
+  let headerHeight = 75 + TOP_MARGIN; // Add TOP_MARGIN
+  
+  // Adjust header height for content
+  if (remarksText && remarksText !== "") headerHeight += 14;
+  
+  // Separator line under header - PROPER GAP
+  const separatorY = headerHeight + 5;
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(0.5);
+  doc.line(M, separatorY, LANDSCAPE_W - M, separatorY);
+  
+  return separatorY + 10; // Good space between header and table
+};
+
+const drawStickerBox = (startY, pageNumber) => {
+  const boxWidth = 130;
+  const boxHeight = 70;
+  const boxSpacing = 20;
+  const boxX1 = LANDSCAPE_W - (boxWidth * 2 + boxSpacing) - M;
+  const boxX2 = boxX1 + boxWidth + boxSpacing;
+  
+  // Draw PARTA CHECKED sticker
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(1.5);
+  doc.rect(boxX1, startY, boxWidth, boxHeight);
+  
+  doc.setFillColor(255, 255, 255);
+  doc.rect(boxX1, startY, boxWidth, boxHeight, "F");
+  
+  let contentY = startY + 10;
+  
+  setFont("bold", 11);
+  doc.text("PARTA CHECKED", boxX1 + boxWidth / 2, contentY, { align: "center" });
+  contentY += 15;
+  
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(0.8);
+  doc.line(boxX1 + 10, contentY, boxX1 + boxWidth - 10, contentY);
+  contentY += 10;
+  
+  setFont("bold", 9);
+  doc.text("DATE :", boxX1 + 12, contentY);
+  
+  const dateLineStartX1 = boxX1 + 45;
+  const dateLineEndX1 = boxX1 + boxWidth - 12;
+  
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(0.8);
+  const dateLineY1 = contentY + 3;
+  doc.line(dateLineStartX1, dateLineY1, dateLineEndX1, dateLineY1);
+  contentY += 14;
+  
+  setFont("bold", 10);
+  doc.text("Parta Incharge Sign", boxX1 + boxWidth / 2, contentY, { align: "center" });
+  contentY += 7;
+  
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(0.8);
+  const signLineY1 = contentY + 1;
+  const signLineStartX1 = boxX1 + 15;
+  const signLineEndX1 = boxX1 + boxWidth - 15;
+  doc.line(signLineStartX1, signLineY1, signLineEndX1, signLineY1);
+  
+  // Draw QUALITY CHECKED sticker
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(1.5);
+  doc.rect(boxX2, startY, boxWidth, boxHeight);
+  
+  doc.setFillColor(255, 255, 255);
+  doc.rect(boxX2, startY, boxWidth, boxHeight, "F");
+  
+  contentY = startY + 10;
+  
+  setFont("bold", 11);
+  doc.text("QUALITY CHECKED", boxX2 + boxWidth / 2, contentY, { align: "center" });
+  contentY += 15;
+  
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(0.8);
+  doc.line(boxX2 + 10, contentY, boxX2 + boxWidth - 10, contentY);
+  contentY += 10;
+  
+  setFont("bold", 9);
+  doc.text("DATE :", boxX2 + 12, contentY);
+  
+  const dateLineStartX2 = boxX2 + 45;
+  const dateLineEndX2 = boxX2 + boxWidth - 12;
+  
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(0.8);
+  const dateLineY2 = contentY + 3;
+  doc.line(dateLineStartX2, dateLineY2, dateLineEndX2, dateLineY2);
+  contentY += 14;
+  
+  setFont("bold", 10);
+  doc.text("Quality Incharge Sign", boxX2 + boxWidth / 2, contentY, { align: "center" });
+  contentY += 7;
+  
+  doc.setDrawColor(...C.black);
+  doc.setLineWidth(0.8);
+  const signLineY2 = contentY + 1;
+  const signLineStartX2 = boxX2 + 15;
+  const signLineEndX2 = boxX2 + boxWidth - 15;
+  doc.line(signLineStartX2, signLineY2, signLineEndX2, signLineY2);
+  
+  return startY + boxHeight + 8;
+};
+      
+      // Function to draw a table page
+      const drawTablePage = (shadeBatch, pageIndex, totalPages, startSrNo) => {
+        const tableStartY = drawPageHeader(pageIndex + 1, totalPages);
+        let y = tableStartY;
+        
+        const tableData = [];
+        const rowsNeeded = Math.max(colorsPerPage, shadeBatch.length);
+        
+        // Get Fabric Lot No and Rib Lot No values from the row
+        const fabricLotNo = val("Fabric Lot No") || val("Fabric Lot") || "—";
+        const ribLotNo = val("Rib Lot No") || val("Rib Lot") || "—";
+        
+        for (let i = 0; i < rowsNeeded; i++) {
+          const srNo = startSrNo + i;
+          const rowData = { 
+            sr_no: srNo.toString(),
+            shade: i < shadeBatch.length ? shadeBatch[i] : "",
+            fabric_lot_no: i === 0 ? fabricLotNo : "", // Only show in first row
+            rib_lot_no: i === 0 ? ribLotNo : "", // Only show in first row
+            rolls: "",
+            kgs: ""
+          };
+          
+          if (sizes.length > 0) {
+            sizes.forEach(size => {
+              rowData[`size_${size}`] = "";
+            });
+          }
+          
+          rowData.total_pcs = "";
+          rowData.kapda_layer_weight = "";
+          rowData.layer_piece = "";
+          rowData.layer_inch = "";
+          rowData.daya = "";
+          rowData.cutting_weight = "";
+          rowData.kapda_vapsi = "";
+          
+          tableData.push(rowData);
+        }
+        
+        if (pageIndex === totalPages - 1) {
+          const totalRow = {
+            sr_no: "TOTAL",
+            shade: "",
+            fabric_lot_no: "",
+            rib_lot_no: "",
+            rolls: "",
+            kgs: "",
+            total_pcs: "",
+            kapda_layer_weight: "",
+            layer_piece: "",
+            layer_inch: "",
+            daya: "",
+            cutting_weight: "",
+            kapda_vapsi: "",
+            isTotalRow: true
+          };
+          
+          sizes.forEach(size => {
+            totalRow[`size_${size}`] = "";
+          });
+          
+          tableData.push(totalRow);
+        }
+        
+        const generateTableHeaders = () => {
+          const headers = [
+            { label: "SR", key: "sr_no", width: 0.5 },
+            { label: "SHADE", key: "shade", width: 1.5 },
+            { label: "FABRIC\nLOT NO", key: "fabric_lot_no", width: 0.9 }, // New column
+            { label: "RIB\nLOT NO", key: "rib_lot_no", width: 0.9 }, // New column
+            { label: "ROLLS", key: "rolls", width: 0.7 },
+            { label: "KGS", key: "kgs", width: 0.7 },
+          ];
+          
+          sizes.forEach(size => {
+            headers.push({ 
+              label: size, 
+              key: `size_${size}`, 
+              width: 0.6
+            });
+          });
+          
+          headers.push(
+            { label: "TOTAL\nPCS", key: "total_pcs", width: 0.7 },
+            { label: "KAPDA\nLAYER WT", key: "kapda_layer_weight", width: 0.9 },
+            { label: "LAYER\nPCS", key: "layer_piece", width: 0.7 },
+            { label: "LAYER\nINCH", key: "layer_inch", width: 0.7 },
+            { label: "DIA", key: "daya", width: 0.6 },
+            { label: "CUTTING\nWEIGHT", key: "cutting_weight", width: 0.8 },
+            { label: "KAPDA\nVAPSI", key: "kapda_vapsi", width: 0.7 }
+          );
+          
+          return headers;
+        };
+        
+        const tableHeaders = generateTableHeaders();
+        
+        // Draw table header
+        const drawTableHeader = () => {
+          doc.setFillColor(...C.white);
+          doc.rect(tableX, y, tableWidth, HEADER_HEIGHT, "F");
+          
+          let currentX = tableX;
+          const totalRatio = tableHeaders.reduce((sum, h) => sum + (h.width || 1), 0);
+          
+          tableHeaders.forEach((h, i) => {
+            const colWidth = (h.width / totalRatio) * tableWidth;
+            
+            doc.setDrawColor(...C.black);
+            doc.setLineWidth(0.5);
+            doc.rect(currentX, y, colWidth, HEADER_HEIGHT);
+            
+            setFont("bold", 7); // Slightly reduced font size to fit more columns
+            
+            if (h.label.length <= 3 && /^[A-Z0-9]+$/.test(h.label) && !h.label.includes('\n')) {
+              doc.text(h.label, currentX + colWidth / 2, y + HEADER_HEIGHT / 2 - 4, { align: "center" });
+              
+              doc.setDrawColor(...C.black);
+              doc.setLineWidth(0.3);
+              doc.line(currentX + 2, y + HEADER_HEIGHT / 2, 
+                      currentX + colWidth - 2, y + HEADER_HEIGHT / 2);
+            } else {
+              const lines = h.label.split('\n');
+              const lineHeight = 7;
+              const startY = y + (HEADER_HEIGHT - (lines.length * lineHeight)) / 2 + 5;
+              
+              lines.forEach((line, lineIdx) => {
+                doc.text(line, currentX + colWidth / 2, startY + (lineIdx * lineHeight), { align: "center" });
+              });
+            }
+            
+            currentX += colWidth;
+          });
+          
+          doc.setDrawColor(...C.black);
+          doc.setLineWidth(1.5);
+          doc.line(tableX, y + HEADER_HEIGHT, tableX + tableWidth, y + HEADER_HEIGHT);
+          
+          return HEADER_HEIGHT;
+        };
+        
+        // Draw table rows
+        const drawTableRows = (headerHeight) => {
+          const totalRatio = tableHeaders.reduce((sum, h) => sum + (h.width || 1), 0);
+          const tableStartRowY = y + headerHeight;
+          
+          for (let rowIndex = 0; rowIndex < tableData.length; rowIndex++) {
+            const rowData = tableData[rowIndex];
+            const rowY = tableStartRowY + (rowIndex * ROW_HEIGHT);
+            
+            if (rowIndex % 2 === 0) {
+              doc.setFillColor(...C.white);
+            } else {
+              doc.setFillColor(245, 245, 245);
+            }
+            doc.rect(tableX, rowY, tableWidth, ROW_HEIGHT, "F");
+            
+            if (rowData.isTotalRow) {
+              doc.setDrawColor(...C.black);
+              doc.setLineWidth(1.5);
+              doc.line(tableX, rowY, tableX + tableWidth, rowY);
+            }
+            
+            let currentX = tableX;
+            
+            tableHeaders.forEach((h, i) => {
+              const colWidth = (h.width / totalRatio) * tableWidth;
+              
+              doc.setDrawColor(...C.black);
+              doc.setLineWidth(0.3);
+              doc.rect(currentX, rowY, colWidth, ROW_HEIGHT);
+              
+              const cellValue = rowData[h.key] || "";
+              
+              if (rowData.isTotalRow) {
+                setFont("bold", 8);
+              } else {
+                setFont("normal", 8);
+              }
+              
+              if (h.key === "shade" || h.key === "fabric_lot_no" || h.key === "rib_lot_no") {
+                const textValue = String(cellValue);
+                const maxWidth = colWidth - 6;
+                const lines = doc.splitTextToSize(textValue, maxWidth);
+                const lineHeight = 7;
+                const totalTextHeight = lines.length * lineHeight;
+                const startY = rowY + (ROW_HEIGHT - totalTextHeight) / 2 + 4;
+                
+                lines.forEach((line, lineIdx) => {
+                  doc.text(line, currentX + colWidth / 2, startY + (lineIdx * lineHeight), { align: "center" });
+                });
+              } else {
+                doc.text(String(cellValue), currentX + colWidth / 2, rowY + ROW_HEIGHT / 2 + 2, { align: "center" });
+              }
+              
+              currentX += colWidth;
+            });
+          }
+          
+          return tableStartRowY + (tableData.length * ROW_HEIGHT);
+        };
+        
+        const headerHeight = drawTableHeader();
+        const tableBottom = drawTableR
+<truncated 142957 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.

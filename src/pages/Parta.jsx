@@ -8,6 +8,9 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx-js-style";
+import { BASE_URL } from "../store.js";
+
+const BACKEND_URL = BASE_URL.replace('/api', '');
 
 const fetchWithRetry = async (url, options = {}, maxRetries = 3) => {
   let lastError;
@@ -83,6 +86,16 @@ const uniq = (arr) => {
     }
   }
   return out;
+};
+
+const normalizeShadeForMatch = (name) => {
+  if (!name) return '';
+  return String(name)
+    .replace(/\[.*?\]/g, '') // remove [...] parts
+    .replace(/\(.*?\)/g, '') // remove (...) parts
+    .replace(/[^a-zA-Z0-9]/g, '') // remove special characters & spaces
+    .trim()
+    .toLowerCase();
 };
 
 const generateCollar = (type, item, style, fabric) => {
@@ -194,7 +207,7 @@ export default function Parta() {
 
       if (isSaveToMySQL) {
         console.log("Saving to MySQL database...");
-        const res = await fetch("https://fabric-backend-9aua.onrender.com/api/parta/save", {
+        const res = await fetch(`${BACKEND_URL}/api/parta/save`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -243,7 +256,7 @@ export default function Parta() {
   async function loadLatestMatrixBlock(lotNumber) {
     try {
       console.log("Checking MySQL database for lot:", lotNumber);
-      const localUrl = `https://fabric-backend-9aua.onrender.com/api/parta/load/${encodeURIComponent(lotNumber)}`;
+      const localUrl = `${BACKEND_URL}/api/parta/load/${encodeURIComponent(lotNumber)}`;
       const localRes = await fetch(localUrl, { method: "GET", keepalive: true });
       if (localRes.ok) {
         const localJson = await localRes.json();
@@ -327,46 +340,41 @@ export default function Parta() {
   // Update the fetchJobOrderValues function
   const fetchJobOrderValues = async () => {
     try {
-      const jobOrderSheetName = "JobOrder";
-      const jobOrderRange = `${jobOrderSheetName}!A2:Z1000`;
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
-        jobOrderRange
-      )}?key=${apiKey}`;
-
+      const url = `${BACKEND_URL}/api/google-sheets/job-orders`;
       const response = await fetchWithRetry(url);
       const json = await response.json();
 
-      if (json.values) {
+      if (Array.isArray(json)) {
         const items = new Map(); // Use Map to store normalized values
         const styles = new Map();
         const fabrics = new Map();
         const brands = new Map();
 
-        json.values.forEach(row => {
+        json.forEach(row => {
           // Normalize and store values
-          if (row[9]) { // Column J: Garment Type (Item)
-            const normalized = normalizeValue(row[9]);
+          if (row['Garment Type']) {
+            const normalized = normalizeValue(row['Garment Type']);
             if (normalized) {
               items.set(normalized.toLowerCase(), normalized);
             }
           }
 
-          if (row[17]) { // Column R: Style
-            const normalized = normalizeValue(row[17]);
+          if (row['Style']) {
+            const normalized = normalizeValue(row['Style']);
             if (normalized) {
               styles.set(normalized.toLowerCase(), normalized);
             }
           }
 
-          if (row[2]) { // Column C: Fabric
-            const normalized = normalizeValue(row[2]);
+          if (row['Fabric']) {
+            const normalized = normalizeValue(row['Fabric']);
             if (normalized) {
               fabrics.set(normalized.toLowerCase(), normalized);
             }
           }
 
-          if (row[3]) { // Column D: Brand
-            const normalized = normalizeValue(row[3]);
+          if (row['Brand']) {
+            const normalized = normalizeValue(row['Brand']);
             if (normalized) {
               brands.set(normalized.toLowerCase(), normalized);
             }
@@ -924,96 +932,30 @@ export default function Parta() {
       // Cache key for fallback
       const cacheKey = `sheets-cache-${spreadsheetId}-${sheetName}-${lotQuery}`;
 
-      // 1) Headers (cache with retry)
-      let headerVals = headerCacheRef.current;
-      if (!headerVals) {
-        const headerURL = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
-          headerRange
-        )}?key=${apiKey}`;
-
-        const headRes = await fetchWithRetry(headerURL, {
-          signal: abortController.signal
-        }, 3);
-
-        if (!headRes.ok) throw new Error(`Header HTTP ${headRes.status}`);
-        const headJson = await headRes.json();
-        headerVals = headJson?.values?.[0] || [];
-        if (!headerVals.length) throw new Error("Header row is empty.");
-        headerCacheRef.current = headerVals;
-        setHeaders(headerVals);
-      } else if (headers.length === 0) {
-        setHeaders(headerVals);
-      }
-
-      const norm = (x) => String(x || "").trim().toLowerCase();
-      const findCol = (names) => headerVals.findIndex((h) => names.includes(norm(h)));
-
-      const lotColIndex = findCol(["lot number", "lot no", "lot no.", "lot"]);
-      const sizeColIndex = findCol(["sizes", "size"]);
-      const shadeColIndex = findCol(["shade", "shades", "color", "colour"]);
-      const fabricColIndex = findCol(["fabric type", "fabric", "fabric_name"]);
-      const garmentColIndex = findCol(["item", "garment type", "garment", "product"]);
-      const styleColIndex = findCol(["style", "style no", "style no."]);
-      const brandColIndex = findCol(["brand", "buyer", "customer", "client"]);
-
-      if (lotColIndex === -1) throw new Error('Couldn\'t find "Lot Number" column.');
-      if (sizeColIndex === -1) throw new Error('Couldn\'t find "Size" column.');
-      if (shadeColIndex === -1) throw new Error('Couldn\'t find "Shade" column.');
-
-      // 2) Find row by lot with retry
-      const lotColLetter = indexToCol(lotColIndex);
-      const colRange = `${sheetName}!${lotColLetter}2:${lotColLetter}`;
-      const colURL = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
-        colRange
-      )}?valueRenderOption=UNFORMATTED_VALUE&key=${apiKey}`;
-
-      const colRes = await fetchWithRetry(colURL, {
+      // Call Express backend to search the lot info
+      const searchUrl = `${BACKEND_URL}/api/job-orders/search/${encodeURIComponent(lotQuery)}`;
+      const searchRes = await fetchWithRetry(searchUrl, {
         signal: abortController.signal
       }, 2);
 
-      if (!colRes.ok) throw new Error(`Column HTTP ${colRes.status}`);
-      const colJson = await colRes.json();
-      const colValues = (colJson?.values || []).map((a) => a?.[0] ?? "");
-
-      let matchedRowNumber = null;
-      const isNum = !Number.isNaN(Number(lotQuery));
-      for (let i = 0; i < colValues.length; i++) {
-        const v = colValues[i];
-        const rn = i + 2;
-        const sMatch = String(v).trim().toLowerCase() === lotQuery.toLowerCase();
-        const nMatch = isNum && Number(v) === Number(lotQuery);
-        if (sMatch || nMatch) {
-          matchedRowNumber = rn;
-          break;
-        }
+      if (!searchRes.ok) throw new Error(`Search HTTP ${searchRes.status}`);
+      const searchJson = await searchRes.json();
+      if (!searchJson.success || !searchJson.data) {
+        throw new Error(searchJson.message || "No matching row found for that Lot Number.");
       }
-      if (!matchedRowNumber) throw new Error("No matching row found for that Lot Number.");
 
-      // 3) Fetch matched row with retry
-      const rowRange = `${rowRangePrefix}${matchedRowNumber}:W${matchedRowNumber}`;
-      const rowURL = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
-        rowRange
-      )}?valueRenderOption=UNFORMATTED_VALUE&key=${apiKey}`;
+      const jobOrderData = searchJson.data;
 
-      const rowRes = await fetchWithRetry(rowURL, {
-        signal: abortController.signal
-      }, 2);
-
-      if (!rowRes.ok) throw new Error(`Row HTTP ${rowRes.status}`);
-      const rowJson = await rowRes.json();
-      const theRow = rowJson?.values?.[0] || [];
-      setRow(theRow);
-
-      // 4) Parse axes from sheet row
-      const parsedSizes = splitMulti(theRow[sizeColIndex] ?? "");
-      const parsedShades = splitMulti(theRow[shadeColIndex] ?? "");
+      // 4) Parse axes from backend job order data
+      const parsedSizes = splitMulti(jobOrderData['Size'] ?? "");
+      const parsedShades = splitMulti(jobOrderData['Shade'] ?? "");
 
       // 5) Meta
-      const fabricVal = fabricColIndex !== -1 ? theRow[fabricColIndex] ?? "" : "";
-      const garmentVal = garmentColIndex !== -1 ? theRow[garmentColIndex] ?? "" : "";
-      const styleVal = styleColIndex !== -1 ? theRow[styleColIndex] ?? "" : "";
-      const brandVal = brandColIndex !== -1 ? theRow[brandColIndex] ?? "" : "";
-      const lotVal = theRow[lotColIndex] ?? lotQuery;
+      const fabricVal = jobOrderData['Fabric'] ?? "";
+      const garmentVal = jobOrderData['Garment Type'] ?? "";
+      const styleVal = jobOrderData['Style'] ?? "";
+      const brandVal = jobOrderData['Brand'] ?? "";
+      const lotVal = jobOrderData['Lot Number'] ?? lotQuery;
       const baseMeta = {
         fabric: String(fabricVal || ""),
         garmentType: String(garmentVal || ""),
@@ -1034,7 +976,7 @@ export default function Parta() {
       let totalReturnedWeightVal = 0;
 
       try {
-        const issuedRollsURL = `https://fabric-backend-9aua.onrender.com/api/fabric-receiving/issued-rolls/${encodeURIComponent(lotVal)}`;
+        const issuedRollsURL = `${BACKEND_URL}/api/fabric-receiving/issued-rolls/${encodeURIComponent(lotVal)}`;
         const issuedRes = await fetch(issuedRollsURL);
         if (issuedRes.ok) {
           const issuedJson = await issuedRes.json();
@@ -1219,7 +1161,7 @@ export default function Parta() {
         const calculatedNetWeight = (kgsVal - kapdaWapsiVal).toFixed(3);
 
         // Calculate gross weight per pcs on initialization (Kgs / Total Pcs)
-        const totalPcs = sizes.reduce((a, sz) => a + num(prefillCells[`${sh}|${sz}`] ?? ""), 0);
+        const totalPcs = finalSizes.reduce((a, sz) => a + num(prefillCells[`${sh}|${sz}`] ?? ""), 0);
         const calculatedGrossWeightPerPcs = totalPcs > 0 ? (kgsVal / totalPcs).toFixed(3) : "";
 
         // Calculate net weight per pcs on initialization (Net Weight / Total Pcs)
@@ -1264,17 +1206,78 @@ export default function Parta() {
         setProposedWeightPerPcs(initProposedWeightPerPcs);
         setNetWeight(initNetWeight);
         setActualWeightPerPcs(initActualWeightPerPcs);
-        setDiff(initDiff);
-        // Weight per piece columns
         setGrossWeightPerPcs(initGrossWeightPerPcs);
         setNetWeightPerPcs(initNetWeightPerPcs);
       });
 
+      // Fetch latest kharcha items from FabricIssuance table for this lot
+      try {
+        console.log("Fetching fabric issuance history for kharcha items, lot:", lotVal);
+        const historyURL = `${BACKEND_URL}/api/issuance-history/${encodeURIComponent(lotVal)}?page=1&pageSize=100`;
+        const historyRes = await fetch(historyURL);
+        if (historyRes.ok) {
+          const historyJson = await historyRes.json();
+          if (historyJson.success && Array.isArray(historyJson.data)) {
+            // Calculate total pieces from prefilled cells
+            let prefilledGrandTotal = 0;
+            finalShades.forEach(sh => {
+              finalSizes.forEach(sz => {
+                const val = parseFloat(prefillCells[`${sh}|${sz}`] || 0);
+                if (!isNaN(val)) {
+                  prefilledGrandTotal += val;
+                }
+              });
+            });
+
+            const dbKharchaItems = [];
+            historyJson.data.forEach(record => {
+              const items = record.kharchaItems || [];
+              items.forEach(item => {
+                const kgsVal = parseFloat(item.weight || 0);
+                const typeVal = String(item.item || '').trim();
+                if (typeVal && kgsVal > 0) {
+                  const pcsVal = prefilledGrandTotal > 0 ? prefilledGrandTotal : 0;
+                  const perPcsVal = pcsVal > 0 ? (kgsVal / pcsVal).toFixed(3) : "0.000";
+                  
+                  dbKharchaItems.push({
+                    id: item.id || `${record.issuanceId || 'iss'}_${Date.now()}_${Math.random()}`,
+                    type: typeVal,
+                    description: item.description || `From Issue Page (Issuance: ${record.issuanceId || 'N/A'})`,
+                    kgs: kgsVal.toFixed(3),
+                    pcs: pcsVal.toString(),
+                    perPcs: perPcsVal,
+                    includeInTotal: true
+                  });
+                }
+              });
+            });
+
+            if (dbKharchaItems.length > 0) {
+              setKharchaEntries(prev => {
+                const merged = [...prev];
+                dbKharchaItems.forEach(dbItem => {
+                  const exists = merged.some(existing => 
+                    existing.id === dbItem.id || 
+                    (existing.type.toLowerCase() === dbItem.type.toLowerCase() && 
+                     Math.abs(parseFloat(existing.kgs) - parseFloat(dbItem.kgs)) < 0.001)
+                  );
+                  if (!exists) {
+                    merged.push(dbItem);
+                  }
+                });
+                return merged;
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch/merge kharcha items from FabricIssuance:", err);
+      }
+
       // Cache successful response
       try {
         const cacheData = {
-          headers: headerVals,
-          row: theRow,
+          row: [],
           sizes: finalSizes,
           shades: finalShades,
           meta: baseMeta,
@@ -1297,9 +1300,7 @@ export default function Parta() {
           const cached = localStorage.getItem(cacheKey);
           if (cached) {
             const cacheData = JSON.parse(cached);
-            // Use cache if it's less than 10 minutes old
             if (Date.now() - cacheData.timestamp < 10 * 60 * 1000) {
-              setHeaders(cacheData.headers);
               setRow(cacheData.row);
               setSizes(cacheData.sizes);
               setShades(cacheData.shades);
@@ -1325,24 +1326,12 @@ export default function Parta() {
         return;
       }
 
-      // User-friendly error messages
-      if (e.message?.includes('HTTP 500')) {
-        setError("Google Sheets is temporarily unavailable. Please try again in a moment.");
-      } else if (e.message?.includes('HTTP 403')) {
-        setError("Access denied. Please check if the spreadsheet is shared properly.");
-      } else if (e.message?.includes('HTTP 404')) {
-        setError("Spreadsheet not found. Please check the spreadsheet ID.");
-      } else if (e.message?.includes('Failed to fetch')) {
-        setError("Network connection issue. Please check your internet connection.");
-      } else {
-        setError(e?.message || "Something went wrong while searching.");
-      }
-
+      setError(e?.message || "Something went wrong while searching.");
       console.error("Search error:", e);
     } finally {
       if (!abortController.signal.aborted) setLoading(false);
     }
-  }, [apiKey, headerRange, rowRangePrefix, sheetName, spreadsheetId, lot, headers.length, num, isAdmin]);
+  }, [lot, num, isAdmin]);
   // Handle save range
   // Add function to load saved ranges from Google Sheets
   const loadSavedRanges = async () => {
@@ -3721,7 +3710,7 @@ export default function Parta() {
                 <div className="summary-card-subtitle">1 - (Cutting Weight ÷ Net Weight)</div>
               </div>
 
-              {dbTotalIssuedWeight > 0 && (
+              {/* {dbTotalIssuedWeight > 0 && (
                 <div className="summary-card card-info" style={{ borderLeft: '4px solid #10B981' }}>
                   <div className="summary-card-title">
                     <span className="summary-card-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>⚖️</span>
@@ -3743,7 +3732,7 @@ export default function Parta() {
                     </button>
                   </div>
                 </div>
-              )}
+              )} */}
 
               {/* New Total card */}
               <div className="summary-card"
@@ -4061,7 +4050,33 @@ export default function Parta() {
 
                         return (
                           <tr key={`r-${shade}-${actualIndex}`} style={{ height: ROW_HEIGHT }}>
-                            <td className="shade-cell">{shade}</td>
+                            <td className="shade-cell">
+                              <div>{shade}</div>
+                              {(() => {
+                                const shadeKey = shade.trim().toLowerCase();
+                                const dbWeight = dbIssuedWeightByShade[shadeKey];
+                                const dbRolls = dbIssuedRollsByShade[shadeKey];
+                                if (dbWeight !== undefined && dbWeight > 0) {
+                                  return (
+                                    <div style={{
+                                      fontSize: '10px',
+                                      fontWeight: '700',
+                                      color: '#10B981',
+                                      marginTop: '4px',
+                                      background: '#ECFDF5',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      display: 'inline-block',
+                                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                                      whiteSpace: 'nowrap'
+                                    }}>
+                                      DB: {dbWeight.toFixed(2)} KG ({dbRolls} Rl)
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </td>
 
                             {/* Cutting Table */}
                             <td>
@@ -4419,7 +4434,34 @@ export default function Parta() {
                           {kharchaEntries.map((entry) => (
                             <tr key={entry.id}>
                               <td style={{ fontWeight: '600' }}>{entry.type}</td>
-                              <td>{entry.description || "—"}</td>
+                              <td>
+                                <input
+                                  className="kharcha-input"
+                                  type="text"
+                                  value={entry.description || ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setKharchaEntries((prev) =>
+                                      prev.map((item) =>
+                                        item.id === entry.id
+                                          ? { ...item, description: val }
+                                          : item
+                                      )
+                                    );
+                                  }}
+                                  placeholder="Add description..."
+                                  disabled={isAdmin || meta.checkedBySahilSir === "yes"}
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    border: '1px solid rgba(99, 102, 241, 0.15)',
+                                    borderRadius: '6px',
+                                    fontSize: '13px',
+                                    outline: 'none',
+                                    background: '#FFFFFF'
+                                  }}
+                                />
+                              </td>
                               <td style={{ textAlign: "center" }}>{entry.kgs}</td>
                               <td style={{ textAlign: "center" }}>{entry.pcs}</td>
                               <td style={{ textAlign: "center" }}>{entry.perPcs || "—"}</td>

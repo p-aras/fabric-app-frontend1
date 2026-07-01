@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Printer, RotateCcw, Package, Calendar, User, Info, ArrowLeft } from 'lucide-react';
+import { BASE_URL } from '../store.js';
 
 export default function FabricReceivingHistoryPage() {
   const navigate = useNavigate();
@@ -9,7 +10,7 @@ export default function FabricReceivingHistoryPage() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const API_URL = 'https://fabric-backend-9aua.onrender.com/api/fabric-receiving/receiving-history';
+  const API_URL = `${BASE_URL}/fabric-receiving/receiving-history`;
 
   // Load history on mount
   useEffect(() => {

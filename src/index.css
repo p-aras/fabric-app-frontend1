@@ -28,10 +28,10 @@
 
   /* Layout */
   --header-height: 64px;
-  --bg: #f1f5f9;
+  --bg: #ffffff;
   --surface: #ffffff;
   --border: #e2e8f0;
-  --border-light: #f1f5f9;
+  --border-light: #ffffff;
 
   /* Text */
   --text-primary: #0f172a;

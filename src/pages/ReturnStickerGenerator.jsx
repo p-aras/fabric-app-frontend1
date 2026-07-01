@@ -56,16 +56,22 @@ const ReturnStickerGenerator = ({
     };
   }, []);
 
+  const prevReturnDataIdRef = useRef(null);
+
   // Load next return barcode ID (R-prefix)
   useEffect(() => {
     if (returnData) {
-      loadNextReturnBarcodeId();
-      // Set default values for editable fields
-      if (!returnData.receivedBy) {
-        setReceivedBy('');
+      const currentBarcodeId = returnData.barcodeId || returnData.originalBarcodeId;
+      if (prevReturnDataIdRef.current !== currentBarcodeId) {
+        prevReturnDataIdRef.current = currentBarcodeId;
+        loadNextReturnBarcodeId();
+        // Set default values for editable fields
+        if (!returnData.receivedBy) {
+          setReceivedBy('');
+        }
+        // Set default location
+        setLocation('RETURNED_INVENTORY');
       }
-      // Set default location
-      setLocation('RETURNED_INVENTORY');
     }
   }, [returnData]);
 
@@ -198,7 +204,7 @@ const ReturnStickerGenerator = ({
   const loadNextReturnBarcodeId = async () => {
     try {
       setIsLoadingSequence(true);
-      const response = await fetch('https://fabric-backend-9aua.onrender.com/api/fabric-receiving/next-return-barcode');
+      const response = await fetch(`${BASE_URL}/fabric-receiving/next-return-barcode`);
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
       
@@ -232,7 +238,7 @@ const ReturnStickerGenerator = ({
 
   const getNextSequentialBarcodeId = async () => {
     try {
-      const response = await fetch('https://fabric-backend-9aua.onrender.com/api/fabric-receiving/next-return-barcode');
+      const response = await fetch(`${BASE_URL}/fabric-receiving/next-return-barcode`);
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
       
@@ -263,13 +269,16 @@ const ReturnStickerGenerator = ({
       // The backend already created the entry when you clicked "Confirm Return"
       // So here we should just update the existing record with the sticker info
       
-      const API_URL = 'https://fabric-backend-9aua.onrender.com/api/fabric-receiving/update-return-sticker';
+      const API_URL = `${BASE_URL}/fabric-receiving/update-return-sticker`;
       
       const payload = {
         originalBarcodeId: stickerData.originalBarcodeId,
         newBarcodeId: stickerData.uniqueBarcodeId,
         stickerGeneratedAt: new Date().toISOString(),
-        stickerPrinted: true
+        stickerPrinted: true,
+        location: stickerData.location,
+        receivedBy: stickerData.receivedPerson,
+        authorizedBy: stickerData.authorizedPerson
       };
       
       console.log('📤 Updating return record with sticker info:', payload);

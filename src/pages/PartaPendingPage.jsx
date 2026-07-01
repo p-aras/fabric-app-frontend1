@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const BASE_URL = 'https://fabric-backend-9aua.onrender.com/api';
+import { BASE_URL } from '../store.js';
 
 const STATUS_COLORS = {
   Missing: { bg: '#FEF2F2', border: '#FCA5A5', text: '#991B1B', dot: '#EF4444' },

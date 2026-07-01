@@ -1,4 +1,6 @@
-export const BASE_URL = 'https://fabric-backend-9aua.onrender.com/api';
+export const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:5001/api'
+  : 'https://fabric-app-backend-new.onrender.com/api';
 
 const getHeaders = () => {
   const token = localStorage.getItem('twms_token');
@@ -103,6 +105,18 @@ export const store = {
   // --- MATERIALS ---
   getMaterials: async () => {
     return fetch(`${BASE_URL}/materials`, {
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getInventory: async (page = 1, limit = 50, search = '', party = '', shade = '', storeName = '', stockStatus = 'All', balPkgs = '', description = '') => {
+    return fetch(`${BASE_URL}/inventory?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&party=${encodeURIComponent(party)}&shade=${encodeURIComponent(shade)}&store=${encodeURIComponent(storeName)}&stockStatus=${encodeURIComponent(stockStatus)}&balPkgs=${encodeURIComponent(balPkgs)}&description=${encodeURIComponent(description)}`, {
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getInventoryFilterValues: async () => {
+    return fetch(`${BASE_URL}/inventory/filter-values`, {
       headers: getHeaders(),
     }).then(handleResponse);
   },
@@ -361,5 +375,26 @@ export const store = {
       headers: getHeaders(),
     });
     return handleResponse(response);
+  },
+
+  getJobOrders: async () => {
+    return fetch(`${BASE_URL}/google-sheets/job-orders`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getPendingCuttingLots: async (refresh = false) => {
+    return fetch(`${BASE_URL}/google-sheets/pending-cutting?refresh=${refresh}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getDailyInventoryReport: async (date = '') => {
+    return fetch(`${BASE_URL}/reports/daily-inventory-quantity?date=${encodeURIComponent(date)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
   }
 };
