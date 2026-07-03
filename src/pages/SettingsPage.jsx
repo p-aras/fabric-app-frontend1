@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { store } from '../store.js';
-import { Settings, Warehouse, Plus, Edit, Trash2, Save, X, Building2, Package, Bell, Moon, Sun, Globe, Lock, History, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Settings, Warehouse, Plus, Edit, Trash2, Save, X, Building2, Package, Bell, Moon, Sun, Globe, Lock, History, CheckCircle2, AlertCircle, LayoutGrid } from 'lucide-react';
 
 export default function SettingsPage({ darkMode, toggleDark }) {
   const [tab, setTab] = useState('warehouse');
@@ -38,17 +38,26 @@ export default function SettingsPage({ darkMode, toggleDark }) {
   const [alertPopup, setAlertPopup] = useState(null);
   const [confirmPopup, setConfirmPopup] = useState(null);
 
+  // Table management states
+  const [tables, setTables] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [showTableForm, setShowTableForm] = useState(false);
+  const [newTableForm, setNewTableForm] = useState({ name: '', supervisorId: '', cutterMasterId: '' });
+  const [editTableForm, setEditTableForm] = useState(null);
+
   const load = () => {
     let active = true;
     const loadSettings = async () => {
       try {
-        const [loadedRooms, loadedSuppliers, loadedAudit, loadedFloors, loadedRacks, loadedShelves] = await Promise.all([
+        const [loadedRooms, loadedSuppliers, loadedAudit, loadedFloors, loadedRacks, loadedShelves, loadedTables, loadedUsers] = await Promise.all([
           store.getRooms(),
           store.getSuppliers(),
           store.getAuditLog(),
           store.getFloors(),
           store.getRacks(),
-          store.getShelves()
+          store.getShelves(),
+          store.getTables(),
+          store.getUsers()
         ]);
         if (!active) return;
         setRooms(loadedRooms || []);
@@ -57,6 +66,8 @@ export default function SettingsPage({ darkMode, toggleDark }) {
         setFloors(loadedFloors || []);
         setRacks(loadedRacks || []);
         setShelves(loadedShelves || []);
+        setTables(loadedTables?.data || []);
+        setUsers(loadedUsers?.data || []);
 
         if (loadedRooms && loadedRooms.length > 0 && !rackRoom) {
           setRackRoom(loadedRooms[0].id);
@@ -72,6 +83,71 @@ export default function SettingsPage({ darkMode, toggleDark }) {
     return () => { active = false; };
   };
   useEffect(load, []);
+
+  const handleSaveTable = async () => {
+    if (!newTableForm.name || !newTableForm.name.trim()) {
+      return setAlertPopup({ title: 'Validation Error', message: 'Table Name is required.', type: 'danger' });
+    }
+    try {
+      const res = await store.addTable({
+        name: newTableForm.name,
+        supervisorId: newTableForm.supervisorId || null,
+        cutterMasterId: newTableForm.cutterMasterId || null
+      });
+      if (res.success) {
+        setAlertPopup({
+          title: 'Work Done',
+          message: `Successfully added Table ${res.data.name}!`,
+          type: 'success'
+        });
+        setNewTableForm({ name: '', supervisorId: '', cutterMasterId: '' });
+        setShowTableForm(false);
+        load();
+      }
+    } catch (err) {
+      setAlertPopup({ title: 'Operation Failed', message: err.message || 'Failed to add table.', type: 'danger' });
+    }
+  };
+
+  const handleUpdateTable = async () => {
+    if (!editTableForm.name || !editTableForm.name.trim()) {
+      return setAlertPopup({ title: 'Validation Error', message: 'Table Name is required.', type: 'danger' });
+    }
+    try {
+      const res = await store.updateTable(editTableForm.id, {
+        name: editTableForm.name,
+        supervisorId: editTableForm.supervisorId || null,
+        cutterMasterId: editTableForm.cutterMasterId || null
+      });
+      if (res.success) {
+        setAlertPopup({
+          title: 'Work Done',
+          message: `Successfully updated Table ${res.data.name}!`,
+          type: 'success'
+        });
+        setEditTableForm(null);
+        load();
+      }
+    } catch (err) {
+      setAlertPopup({ title: 'Operation Failed', message: err.message || 'Failed to update table.', type: 'danger' });
+    }
+  };
+
+  const handleDeleteTable = async (id) => {
+    setConfirmPopup({
+      title: 'Delete Table',
+      message: 'Are you sure you want to delete this table? This action cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await store.deleteTable(id);
+          setAlertPopup({ title: 'Success', message: 'Table deleted successfully.', type: 'success' });
+          load();
+        } catch (err) {
+          setAlertPopup({ title: 'Delete Failed', message: err.message || 'Failed to delete table.', type: 'danger' });
+        }
+      }
+    });
+  };
 
   const handleSaveRoom = async () => {
     if (!newRoomForm.id || newRoomForm.id.length !== 1) {
@@ -343,6 +419,7 @@ export default function SettingsPage({ darkMode, toggleDark }) {
   const TABS = [
     { id: 'warehouse', label: 'Warehouse Setup', icon: Warehouse },
     { id: 'suppliers', label: 'Suppliers', icon: Building2 },
+    { id: 'tables', label: 'Table Management', icon: LayoutGrid },
     { id: 'notifications', label: 'App Settings', icon: Settings },
     { id: 'audit', label: 'Audit Log', icon: History },
   ];
@@ -1003,6 +1080,245 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TABLES MANAGEMENT */}
+      {tab === 'tables' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 10 }}>
+            <button className="btn btn-primary" onClick={() => {
+              setNewTableForm({ name: '', supervisorId: '', cutterMasterId: '' });
+              setShowTableForm(!showTableForm);
+            }}>
+              <Plus size={16} /> {showTableForm ? 'Cancel' : 'Add New Table'}
+            </button>
+          </div>
+
+          {showTableForm && (
+            <div className="card" style={{ marginBottom: 10 }}>
+              <div className="card-header">
+                <div className="card-title"><LayoutGrid size={15} /> Add New Table</div>
+              </div>
+              <div className="card-body">
+                <div className="form-grid form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                  <div className="form-group">
+                    <label className="form-label">Table Name <span className="required">*</span></label>
+                    <input className="form-control"
+                      placeholder="e.g. Table 13"
+                      value={newTableForm.name}
+                      onChange={e => setNewTableForm({ ...newTableForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Assign Supervisor</label>
+                    <select className="form-control"
+                      value={newTableForm.supervisorId}
+                      onChange={e => setNewTableForm({ ...newTableForm, supervisorId: e.target.value ? parseInt(e.target.value) : '' })}
+                    >
+                      <option value="">Unassigned</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Assign Cutter Master</label>
+                    <select className="form-control"
+                      value={newTableForm.cutterMasterId}
+                      onChange={e => setNewTableForm({ ...newTableForm, cutterMasterId: e.target.value ? parseInt(e.target.value) : '' })}
+                    >
+                      <option value="">Unassigned</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="card-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: 16 }}>
+                <button className="btn btn-primary" onClick={handleSaveTable}><Save size={14} /> Add Table</button>
+              </div>
+            </div>
+          )}
+
+          {/* EDIT TABLE MODAL */}
+          {editTableForm && (
+            <div className="modal-overlay" style={{ zIndex: 1100 }}>
+              <div className="modal" style={{ maxWidth: 500, flexDirection: 'column' }}>
+                <div className="card-header" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <div className="card-title"><Edit size={16} /> Edit Table: {editTableForm.name}</div>
+                  <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setEditTableForm(null)}><X size={16} /></button>
+                </div>
+                <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
+                  <div className="form-group">
+                    <label className="form-label">Table Name <span className="required">*</span></label>
+                    <input className="form-control" value={editTableForm.name}
+                      onChange={e => setEditTableForm({ ...editTableForm, name: e.target.value })} />
+                  </div>
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label className="form-label">Assign Supervisor</label>
+                    <select className="form-control" value={editTableForm.supervisorId || ''}
+                      onChange={e => setEditTableForm({ ...editTableForm, supervisorId: e.target.value ? parseInt(e.target.value) : null })}>
+                      <option value="">Unassigned</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label className="form-label">Assign Cutter Master</label>
+                    <select className="form-control" value={editTableForm.cutterMasterId || ''}
+                      onChange={e => setEditTableForm({ ...editTableForm, cutterMasterId: e.target.value ? parseInt(e.target.value) : null })}>
+                      <option value="">Unassigned</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="card-footer" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: 16, borderTop: '1px solid var(--border)' }}>
+                  <button className="btn btn-secondary" onClick={() => setEditTableForm(null)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleUpdateTable}><Save size={14} /> Save Changes</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TABLES LIST */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">All Tables</div>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tables.length} tables configured</span>
+            </div>
+            <div className="table-wrap" style={{ border: 'none' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Table Name</th>
+                    <th>Assigned Supervisor</th>
+                    <th>Assigned Cutter Master</th>
+                    <th>Supervisor Info</th>
+                    <th>Cutter Master Info</th>
+                    <th style={{ width: '100px', textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tables.map(tbl => (
+                    <tr key={tbl.id}>
+                      <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 14 }}>
+                        {tbl.name}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>
+                        <select
+                          className="form-control"
+                          value={tbl.supervisorId || ''}
+                          onChange={async (e) => {
+                            const newSupId = e.target.value ? parseInt(e.target.value) : null;
+                            try {
+                              await store.updateTable(tbl.id, {
+                                name: tbl.name,
+                                supervisorId: newSupId,
+                                cutterMasterId: tbl.cutterMasterId
+                              });
+                              load();
+                            } catch (err) {
+                              setAlertPopup({
+                                title: 'Update Failed',
+                                message: err.message || 'Failed to assign supervisor.',
+                                type: 'danger'
+                              });
+                            }
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            height: '32px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            borderRadius: '6px',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                            width: '100%',
+                            maxWidth: '180px'
+                          }}
+                        >
+                          <option value="">Unassigned</option>
+                          {users.map(u => (
+                            <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ fontWeight: 600 }}>
+                        <select
+                          className="form-control"
+                          value={tbl.cutterMasterId || ''}
+                          onChange={async (e) => {
+                            const newCmId = e.target.value ? parseInt(e.target.value) : null;
+                            try {
+                              await store.updateTable(tbl.id, {
+                                name: tbl.name,
+                                supervisorId: tbl.supervisorId,
+                                cutterMasterId: newCmId
+                              });
+                              load();
+                            } catch (err) {
+                              setAlertPopup({
+                                title: 'Update Failed',
+                                message: err.message || 'Failed to assign cutter master.',
+                                type: 'danger'
+                              });
+                            }
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            height: '32px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            borderRadius: '6px',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                            width: '100%',
+                            maxWidth: '180px'
+                          }}
+                        >
+                          <option value="">Unassigned</option>
+                          {users.map(u => (
+                            <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        {tbl.Supervisor ? `${tbl.Supervisor.role} · ${tbl.Supervisor.email}` : '—'}
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        {tbl.CutterMaster ? `${tbl.CutterMaster.role} · ${tbl.CutterMaster.email}` : '—'}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                          <button className="btn btn-ghost btn-icon btn-sm"
+                            onClick={() => setEditTableForm({ id: tbl.id, name: tbl.name, supervisorId: tbl.supervisorId, cutterMasterId: tbl.cutterMasterId })}
+                            title="Edit Table"
+                          >
+                            <Edit size={13} />
+                          </button>
+                          <button className="btn btn-ghost btn-icon btn-sm" style={{ color: 'var(--danger)' }}
+                            onClick={() => handleDeleteTable(tbl.id)}
+                            title="Delete Table"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

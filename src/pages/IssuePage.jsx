@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FabricReceiving from './FabricReceiving.jsx';
 import '../Design/FabricIssued.css';
 
-import { BASE_URL } from '../store.js';
+import { store, BASE_URL } from '../store.js';
 
 // Load jsPDF lazily to avoid bundle-time resolution issues
 async function loadJsPDF() {
@@ -96,6 +96,8 @@ const FabricIssued = () => {
   const [searchedRoll, setSearchedRoll] = useState(null);
   const [isSearchingRoll, setIsSearchingRoll] = useState(false);
   const [searchRollError, setSearchRollError] = useState(null);
+  const [mtrWeightModal, setMtrWeightModal] = useState(null); // { barcodeId, matchingRoll, ... }
+  const [scannedBarcodeWeights, setScannedBarcodeWeights] = useState({});
   const [fabricApprovals, setFabricApprovals] = useState({});
   const [defaultApproverName, setDefaultApproverName] = useState('');
 
@@ -106,6 +108,19 @@ const FabricIssued = () => {
   const [matchingPassedBy, setMatchingPassedBy] = useState('');
   const [shadeTableNumbers, setShadeTableNumbers] = useState({});
   const [defaultTable, setDefaultTable] = useState('Table 1');
+  const [allTables, setAllTables] = useState([]);
+
+  const displayedTables = useMemo(() => {
+    if (allTables.length === 0) return [];
+    if (loggedInUser?.role === 'Admin') {
+      return allTables;
+    }
+    const supervisorTables = allTables.filter(tbl => tbl.supervisorId === loggedInUser?.id);
+    if (supervisorTables.length > 0) {
+      return supervisorTables;
+    }
+    return allTables;
+  }, [allTables, loggedInUser]);
 
   // Kharcha (accessories/expense) issuance
   const [kharchaItems, setKharchaItems] = useState([{ id: Date.now(), item: '', weight: '' }]);
@@ -125,6 +140,22 @@ const FabricIssued = () => {
     if (userData) {
       setLoggedInUser(JSON.parse(userData));
     }
+  }, []);
+
+  // Fetch dynamic tables list on load
+  useEffect(() => {
+    const fetchTables = async () => {
+      try {
+        const res = await store.getTables();
+        if (res.success && res.data && res.data.length > 0) {
+          setAllTables(res.data);
+          setDefaultTable(res.data[0].name);
+        }
+      } catch (err) {
+        console.error('Error fetching tables in IssuePage:', err);
+      }
+    };
+    fetchTables();
   }, []);
 
   const getDisplayName = () => {
@@ -224,10 +255,11 @@ const FabricIssued = () => {
     return new Set();
   };
 
-  // Check if barcode was ever issued globally
+  // Check if barcode was ever issued globally or in the current session
   const isBarcodeGloballyIssued = (barcodeId) => {
-    if (duplicateCheckCache[barcodeId] !== undefined) {
-      return duplicateCheckCache[barcodeId];
+    // Only cache positive duplicate matches to avoid stale negatives
+    if (duplicateCheckCache[barcodeId] === true) {
+      return true;
     }
 
     if (globalIssuedBarcodes.has(barcodeId)) {
@@ -235,7 +267,11 @@ const FabricIssued = () => {
       return true;
     }
 
-    const currentSessionBarcodes = Object.values(scannedBarcodes).flat();
+    // Filter out metadata objects like '_party' or '_location' to get clean arrays of barcode IDs
+    const currentSessionBarcodes = Object.keys(scannedBarcodes)
+      .filter(key => !key.endsWith('_party') && !key.endsWith('_location'))
+      .flatMap(key => scannedBarcodes[key] || []);
+
     if (currentSessionBarcodes.includes(barcodeId)) {
       setDuplicateCheckCache(prev => ({ ...prev, [barcodeId]: true }));
       return true;
@@ -270,7 +306,6 @@ const FabricIssued = () => {
       }
     }
 
-    setDuplicateCheckCache(prev => ({ ...prev, [barcodeId]: false }));
     return false;
   };
 
@@ -317,7 +352,7 @@ const FabricIssued = () => {
         const initialTables = {};
         const allShades = getShadesWithIds(found['Shade']);
         allShades.forEach(s => {
-          initialTables[s.id] = defaultTable || 'Table 1';
+          initialTables[s.id] = defaultTable || (displayedTables[0]?.name || 'Table 1');
         });
         setShadeTableNumbers(initialTables);
         setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
@@ -845,6 +880,26 @@ const FabricIssued = () => {
       console.warn(`⚠️ WARNING: No party name found for barcode ${barcodeId}. Party column might be empty.`);
     }
 
+    const rollLocation = matchingRoll['Location'] || '';
+
+    // Check if unit is MTR and no weight is supplied in barcode
+    const isMtr = matchingRoll['Unit'] && matchingRoll['Unit'].toUpperCase().includes('MTR');
+    if (isMtr && scannedWeight === null) {
+      setMtrWeightModal({
+        barcodeId,
+        matchingRoll,
+        selectedShadeId,
+        selectedShadeName,
+        selectedShadeEntryNum,
+        partyName,
+        rollLocation,
+        rollItemDescription,
+        rollShade
+      });
+      setBarcodeInput('');
+      return;
+    }
+
     let finalWeight = 0;
     if (scannedWeight && !isNaN(scannedWeight)) {
       finalWeight = scannedWeight;
@@ -883,7 +938,6 @@ const FabricIssued = () => {
     newScannedBarcodes[`${selectedShadeId}_party`][barcodeId] = partyName;
 
     // Store location for this barcode
-    const rollLocation = matchingRoll['Location'] || '';
     if (!newScannedBarcodes[`${selectedShadeId}_location`]) {
       newScannedBarcodes[`${selectedShadeId}_location`] = {};
     }
@@ -894,6 +948,10 @@ const FabricIssued = () => {
     setIssueWeight(newIssueWeight);
     setIssueQuantity(newIssueQuantity);
     setScannedBarcodes(newScannedBarcodes);
+    setScannedBarcodeWeights(prev => ({
+      ...prev,
+      [barcodeId]: finalWeight
+    }));
 
     setScannedRoll({
       rollNumber: matchingRoll['Barcode ID'],
@@ -912,6 +970,86 @@ const FabricIssued = () => {
 
     setBarcodeInput('');
 
+    setTimeout(() => {
+      setScannedRoll(null);
+    }, 3000);
+
+    barcodeInputRef.current?.focus();
+  };
+
+  const submitMtrWeight = (enteredWeight) => {
+    const weightVal = parseFloat(enteredWeight);
+    if (isNaN(weightVal) || weightVal <= 0) {
+      alert('Please enter a valid weight in KGS');
+      return;
+    }
+
+    const {
+      barcodeId,
+      matchingRoll,
+      selectedShadeId,
+      selectedShadeName,
+      selectedShadeEntryNum,
+      partyName,
+      rollLocation,
+      rollItemDescription,
+      rollShade
+    } = mtrWeightModal;
+
+    const newIssueWeight = { ...issueWeight };
+    const newIssueQuantity = { ...issueQuantity };
+    const newScannedBarcodes = { ...scannedBarcodes };
+
+    newIssueWeight[selectedShadeId] = (newIssueWeight[selectedShadeId] || 0) + weightVal;
+    newIssueQuantity[selectedShadeId] = (newIssueQuantity[selectedShadeId] || 0) + 1;
+
+    if (!newScannedBarcodes[selectedShadeId]) {
+      newScannedBarcodes[selectedShadeId] = [];
+    }
+
+    if (newScannedBarcodes[selectedShadeId].includes(barcodeId)) {
+      alert(`⚠️ Barcode ${barcodeId} is already in the current session!`);
+      setMtrWeightModal(null);
+      return;
+    }
+
+    if (!newScannedBarcodes[`${selectedShadeId}_party`]) {
+      newScannedBarcodes[`${selectedShadeId}_party`] = {};
+    }
+    newScannedBarcodes[`${selectedShadeId}_party`][barcodeId] = partyName;
+
+    // Store location for this barcode
+    if (!newScannedBarcodes[`${selectedShadeId}_location`]) {
+      newScannedBarcodes[`${selectedShadeId}_location`] = {};
+    }
+    newScannedBarcodes[`${selectedShadeId}_location`][barcodeId] = rollLocation;
+
+    newScannedBarcodes[selectedShadeId].push(barcodeId);
+
+    setIssueWeight(newIssueWeight);
+    setIssueQuantity(newIssueQuantity);
+    setScannedBarcodes(newScannedBarcodes);
+    setScannedBarcodeWeights(prev => ({
+      ...prev,
+      [barcodeId]: weightVal
+    }));
+
+    setScannedRoll({
+      rollNumber: barcodeId,
+      fabric: rollItemDescription,
+      shade: rollShade,
+      shadeEntry: selectedShadeEntryNum,
+      weight: weightVal,
+      party: partyName,
+      location: rollLocation,
+      timestamp: new Date().toLocaleTimeString()
+    });
+
+    console.log(`✅ Success! Added MTR roll with manual weight to ${selectedShadeName} (Entry ${selectedShadeEntryNum})`);
+    console.log(`📊 Current session: ${newIssueQuantity[selectedShadeId]} rolls, ${newIssueWeight[selectedShadeId].toFixed(2)} kg`);
+
+    setMtrWeightModal(null);
+    setBarcodeInput('');
     setTimeout(() => {
       setScannedRoll(null);
     }, 3000);
@@ -1421,7 +1559,10 @@ const FabricIssued = () => {
       remarks: `Issued ${issuedShadeIds.length} shade types, Total ${totalQuantity} rolls. Barcodes: ${allBarcodeIds.join(', ')}`,
       jobDetails: selectedJob,
       fabricChangeApprovals: approvalsList,
-      kharchaItems: validKharchaItems
+      kharchaItems: validKharchaItems,
+      barcodeWeights: scannedBarcodeWeights,
+      matchingStatus: lotMatchingStatus || null,
+      matchingPassedBy: matchingPassedBy || null
     };
 
     console.log('📦 Issuance Record with Barcodes:', issuanceRecord);
@@ -1477,6 +1618,7 @@ const FabricIssued = () => {
       setScannedRoll(null);
       setSelectedShades({});
       setScannedBarcodes({});
+      setScannedBarcodeWeights({});
       setFabricApprovals({});
       setDefaultApproverName('');
       setMatchingPassedBy('');
@@ -1518,6 +1660,7 @@ const FabricIssued = () => {
       setScannedRoll(null);
       setSelectedShades({});
       setScannedBarcodes({});
+      setScannedBarcodeWeights({});
       setFabricApprovals({});
       setDefaultApproverName('');
       setMatchingPassedBy('');
@@ -2021,6 +2164,10 @@ const FabricIssued = () => {
                         <span className="searched-roll-value">{searchedRoll['Weight (KG)']} kg</span>
                       </div>
                       <div className="searched-roll-item">
+                        <span className="searched-roll-label">Unit</span>
+                        <span className="searched-roll-value">{searchedRoll['Unit'] || '—'}</span>
+                      </div>
+                      <div className="searched-roll-item">
                         <span className="searched-roll-label">Party / Source</span>
                         <span className="searched-roll-value">{searchedRoll['Party'] || searchedRoll['cmfName'] || '—'}</span>
                       </div>
@@ -2151,9 +2298,15 @@ const FabricIssued = () => {
                     fontFamily: 'inherit'
                   }}
                 >
-                  {Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => (
-                    <option key={t} value={t} style={{ background: '#1e293b', color: 'white' }}>{t}</option>
-                  ))}
+                  {displayedTables.length > 0 ? (
+                    displayedTables.map(tbl => (
+                      <option key={tbl.id} value={tbl.name} style={{ background: '#1e293b', color: 'white' }}>{tbl.name}</option>
+                    ))
+                  ) : (
+                    Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => (
+                      <option key={t} value={t} style={{ background: '#1e293b', color: 'white' }}>{t}</option>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
@@ -2314,35 +2467,75 @@ const FabricIssued = () => {
                           }}>
                             <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Assign Table for this shade:</span>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-                              {Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => {
-                                const isTableSelected = shadeTableNumbers[shadeId] === t;
-                                return (
-                                  <button
-                                    key={t}
-                                    type="button"
-                                    onClick={() => {
-                                      setShadeTableNumbers(prev => ({
-                                        ...prev,
-                                        [shadeId]: t
-                                      }));
-                                    }}
-                                    style={{
-                                      padding: '4px 10px',
-                                      background: isTableSelected ? 'linear-gradient(135deg, #0ca678, #059669)' : 'rgba(255,255,255,0.06)',
-                                      color: isTableSelected ? 'white' : '#cbd5e1',
-                                      border: isTableSelected ? 'none' : '1px solid rgba(255,255,255,0.15)',
-                                      borderRadius: '6px',
-                                      fontSize: '11px',
-                                      fontWeight: '700',
-                                      cursor: 'pointer',
-                                      boxShadow: isTableSelected ? '0 2px 6px rgba(12,166,120,0.3)' : 'none',
-                                      transition: 'all 0.15s'
-                                    }}
-                                  >
-                                    {t.replace('Table ', 'T')}
-                                  </button>
-                                );
-                              })}
+                              {displayedTables.length > 0 ? (
+                                displayedTables.map(tbl => {
+                                  const t = tbl.name;
+                                  const isTableSelected = shadeTableNumbers[shadeId] === t;
+                                  const supervisorName = tbl.Supervisor ? tbl.Supervisor.name : 'Unassigned';
+                                  return (
+                                    <button
+                                      key={tbl.id}
+                                      type="button"
+                                      title={`Supervisor: ${supervisorName}`}
+                                      onClick={() => {
+                                        setShadeTableNumbers(prev => ({
+                                          ...prev,
+                                          [shadeId]: t
+                                        }));
+                                      }}
+                                      style={{
+                                        padding: '4px 10px',
+                                        background: isTableSelected ? 'linear-gradient(135deg, #0ca678, #059669)' : 'rgba(255,255,255,0.06)',
+                                        color: isTableSelected ? 'white' : '#cbd5e1',
+                                        border: isTableSelected ? 'none' : '1px solid rgba(255,255,255,0.15)',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        cursor: 'pointer',
+                                        boxShadow: isTableSelected ? '0 2px 6px rgba(12,166,120,0.3)' : 'none',
+                                        transition: 'all 0.15s'
+                                      }}
+                                    >
+                                      {t.replace('Table ', 'T')}
+                                      {tbl.Supervisor && loggedInUser?.role === 'Admin' && (
+                                        <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '4px', fontWeight: '500' }}>
+                                          ({(tbl.Supervisor.name || '').split(' ')[0]})
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => {
+                                  const isTableSelected = shadeTableNumbers[shadeId] === t;
+                                  return (
+                                    <button
+                                      key={t}
+                                      type="button"
+                                      onClick={() => {
+                                        setShadeTableNumbers(prev => ({
+                                          ...prev,
+                                          [shadeId]: t
+                                        }));
+                                      }}
+                                      style={{
+                                        padding: '4px 10px',
+                                        background: isTableSelected ? 'linear-gradient(135deg, #0ca678, #059669)' : 'rgba(255,255,255,0.06)',
+                                        color: isTableSelected ? 'white' : '#cbd5e1',
+                                        border: isTableSelected ? 'none' : '1px solid rgba(255,255,255,0.15)',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        cursor: 'pointer',
+                                        boxShadow: isTableSelected ? '0 2px 6px rgba(12,166,120,0.3)' : 'none',
+                                        transition: 'all 0.15s'
+                                      }}
+                                    >
+                                      {t.replace('Table ', 'T')}
+                                    </button>
+                                  );
+                                })
+                              )}
                             </div>
                           </div>
                         )}
@@ -2916,6 +3109,105 @@ const FabricIssued = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── MTR Weight Input Modal ─────────────────────────────────── */}
+      {mtrWeightModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'fadeInModal 0.2s ease'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: '20px',
+            padding: '36px 40px',
+            maxWidth: '440px',
+            width: '90%',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+            textAlign: 'center',
+            animation: 'slideUpModal 0.25s cubic-bezier(0.34,1.56,0.64,1)'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚖️</div>
+            <h2 style={{
+              color: '#f1f5f9', fontSize: '20px', fontWeight: '700',
+              marginBottom: '10px', letterSpacing: '0.3px'
+            }}>Enter Weight in KGS</h2>
+            <p style={{
+              color: '#94a3b8', fontSize: '14px', lineHeight: '1.6',
+              marginBottom: '20px'
+            }}>
+              Barcode <strong style={{ color: '#facc15' }}>{mtrWeightModal.barcodeId}</strong> contains unit in <strong style={{ color: '#60a5fa' }}>MTR</strong>.<br/>
+              Please write/input the weight in <strong style={{ color: '#10b981' }}>KGS</strong> below:
+            </p>
+            <div style={{ marginBottom: '24px' }}>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                id="mtr-weight-input"
+                placeholder="Enter weight in KG (e.g. 15.45)..."
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: 'rgba(30, 41, 59, 0.8)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '12px',
+                  color: 'white',
+                  fontSize: '15px',
+                  fontWeight: '700',
+                  outline: 'none',
+                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                  textAlign: 'center'
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    submitMtrWeight(e.target.value);
+                  }
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+              <button
+                onClick={() => {
+                  setMtrWeightModal(null);
+                  setTimeout(() => barcodeInputRef.current?.focus(), 100);
+                }}
+                style={{
+                  flex: 1, padding: '13px 20px',
+                  background: 'rgba(255,255,255,0.08)',
+                  color: '#bbb', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px',
+                  fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+                  transition: 'background 0.15s'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const val = document.getElementById('mtr-weight-input')?.value;
+                  submitMtrWeight(val);
+                }}
+                style={{
+                  flex: 1, padding: '13px 20px',
+                  background: 'linear-gradient(135deg, #0ca678, #059669)',
+                  color: 'white', border: 'none', borderRadius: '12px',
+                  fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(12,166,120,0.35)',
+                  transition: 'transform 0.15s, box-shadow 0.15s'
+                }}
+                onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(12,166,120,0.5)'; }}
+                onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(12,166,120,0.35)'; }}
+              >
+                Confirm Weight
+              </button>
+            </div>
           </div>
         </div>
       )}

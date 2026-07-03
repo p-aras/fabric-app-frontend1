@@ -7,42 +7,61 @@ export default function WarehousePage() {
   const [floors, setFloors] = useState([]);
   const [racks, setRacks] = useState([]);
   const [shelves, setShelves] = useState([]);
-  const [materials, setMaterials] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState('');
   const [selectedRack, setSelectedRack] = useState(null);
   const [selectedShelf, setSelectedShelf] = useState(null);
 
   const [suppliers, setSuppliers] = useState([]);
+  const [shelfMaterials, setShelfMaterials] = useState([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
 
+  // Load Warehouse configuration in 1 single unified settings call on mount
   useEffect(() => {
     let active = true;
     const loadData = async () => {
       try {
-        const [roomsData, floorsData, racksData, shelvesData, materialsData, suppliersData] = await Promise.all([
-          store.getRooms(),
-          store.getFloors(),
-          store.getRacks(),
-          store.getShelves(),
-          store.getMaterials(),
-          store.getSuppliers()
-        ]);
+        const settings = await store.getSettingsData();
         if (!active) return;
-        setRooms(roomsData || []);
-        setFloors(floorsData || []);
-        setRacks(racksData || []);
-        setShelves(shelvesData || []);
-        setMaterials(materialsData || []);
-        setSuppliers(suppliersData || []);
-        if (roomsData && roomsData.length > 0) {
-          setSelectedRoom(roomsData[0].id);
+        setRooms(settings.rooms || []);
+        setFloors(settings.floors || []);
+        setRacks(settings.racks || []);
+        setShelves(settings.shelves || []);
+        setSuppliers(settings.suppliers || []);
+        if (settings.rooms && settings.rooms.length > 0) {
+          setSelectedRoom(settings.rooms[0].id);
         }
       } catch (e) {
-        console.error(e);
+        console.error("Error loading warehouse configuration settings:", e);
       }
     };
     loadData();
     return () => { active = false; };
   }, []);
+
+  // Fetch materials for only the selected shelf dynamically
+  useEffect(() => {
+    if (!selectedShelf) {
+      setShelfMaterials([]);
+      return;
+    }
+
+    let active = true;
+    const fetchShelfMaterials = async () => {
+      setMaterialsLoading(true);
+      try {
+        const data = await store.getMaterials({ location: selectedShelf });
+        if (!active) return;
+        setShelfMaterials(data || []);
+      } catch (err) {
+        console.error("Error loading shelf materials:", err);
+      } finally {
+        if (active) setMaterialsLoading(false);
+      }
+    };
+
+    fetchShelfMaterials();
+    return () => { active = false; };
+  }, [selectedShelf]);
 
   const roomRacks = racks.filter(r => r.room === selectedRoom);
 
@@ -59,10 +78,6 @@ export default function WarehousePage() {
       ...s,
       pct: s.capacity > 0 ? Math.round((s.used / s.capacity) * 100) : 0,
     }))
-    : [];
-
-  const shelfMaterials = selectedShelf
-    ? materials.filter(m => m.location === selectedShelf)
     : [];
 
   const getSupplierName = (id) => suppliers.find(s => s.id === id)?.name || '—';
@@ -269,12 +284,19 @@ export default function WarehousePage() {
       {/* Materials in Selected Shelf */}
       {selectedShelf && (
         <div className="card">
-          <div className="card-header">
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="card-title"><Package size={15} /> Materials in Shelf: {selectedShelf}</div>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{shelfMaterials.length} material(s)</span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+              {materialsLoading ? 'Loading...' : `${shelfMaterials.length} material(s)`}
+            </span>
           </div>
           <div className="card-body" style={{ padding: 0 }}>
-            {shelfMaterials.length === 0 ? (
+            {materialsLoading ? (
+              <div style={{ padding: 40, textAlign: 'center' }}>
+                <div className="spinner" style={{ margin: '0 auto 12px' }} />
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading shelf inventory...</div>
+              </div>
+            ) : shelfMaterials.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon"><Info size={28} /></div>
                 <h3>No Materials Here</h3>

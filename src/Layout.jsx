@@ -30,11 +30,13 @@ const NAV = [
   { path: '/parta', icon: Grid, label: 'Job Order Matrix (Parta)' },
   { path: '/job-orders', icon: Layers, label: 'Job Orders' },
   { path: '/fabric-receiving-history', icon: History, label: 'Fabric Returns Log' },
+  { path: '/reports/daily-fabric-issue', icon: FileText, label: 'Daily Fabric Issue' },
   { path: '/parta-pending', icon: AlertCircle, label: 'Pending info in Parta' },
   {
     label: 'Reports',
     icon: BarChart3,
     children: [
+      { path: '/reports/dyeing-shortage', icon: Droplets, label: 'Dyeing Shortage Report' },
       {
         label: 'Daily Inventory Report',
         icon: FileText,
@@ -49,7 +51,8 @@ const NAV = [
         children: [
           { path: '/reports/daily-cutting/cutter-master', label: 'Cutter Master Wise' },
           { path: '/reports/daily-cutting/supervisor', label: 'Supervisor Wise' },
-          { path: '/reports/daily-cutting/hall', label: 'Hall Wise' }
+          { path: '/reports/daily-cutting/hall', label: 'Hall Wise' },
+          { path: '/reports/daily-cutting/location', label: 'Location Wise' }
         ]
       }
     ]

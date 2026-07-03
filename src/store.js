@@ -1,6 +1,6 @@
 export const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:5001/api'
-  : 'https://fabric-app-backend-new.onrender.com/api';
+  : 'https://fabric-backend-9aua.onrender.com/api';
 
 const getHeaders = () => {
   const token = localStorage.getItem('twms_token');
@@ -103,8 +103,12 @@ export const store = {
   },
 
   // --- MATERIALS ---
-  getMaterials: async () => {
-    return fetch(`${BASE_URL}/materials`, {
+  getMaterials: async (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.location) params.append('location', filters.location);
+    if (filters.search) params.append('search', filters.search);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return fetch(`${BASE_URL}/materials${queryString}`, {
       headers: getHeaders(),
     }).then(handleResponse);
   },
@@ -393,6 +397,78 @@ export const store = {
 
   getDailyInventoryReport: async (date = '') => {
     return fetch(`${BASE_URL}/reports/daily-inventory-quantity?date=${encodeURIComponent(date)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getSupervisorIssuanceReport: async (startDate = '', endDate = '') => {
+    return fetch(`${BASE_URL}/reports/supervisor-issuance?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getDailyFabricIssuanceReport: async (startDate = '', endDate = '', table = '', fabric = '') => {
+    return fetch(`${BASE_URL}/reports/daily-fabric-issuance?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&table=${encodeURIComponent(table)}&fabric=${encodeURIComponent(fabric)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getLocationIssuanceReport: async (startDate = '', endDate = '') => {
+    return fetch(`${BASE_URL}/reports/location-issuance?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getCutterMasterIssuanceReport: async (startDate = '', endDate = '') => {
+    return fetch(`${BASE_URL}/reports/cutter-master-issuance?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getTables: async () => {
+    return fetch(`${BASE_URL}/tables`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  addTable: async (data) => {
+    return fetch(`${BASE_URL}/tables`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    }).then(handleResponse);
+  },
+
+  updateTable: async (id, data) => {
+    return fetch(`${BASE_URL}/tables/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    }).then(handleResponse);
+  },
+
+  deleteTable: async (id) => {
+    return fetch(`${BASE_URL}/tables/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getUsers: async () => {
+    return fetch(`${BASE_URL}/auth/users`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getDyeingShortageReport: async () => {
+    return fetch(`${BASE_URL}/reports/dyeing-shortage`, {
       method: 'GET',
       headers: getHeaders(),
     }).then(handleResponse);

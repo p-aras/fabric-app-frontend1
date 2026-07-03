@@ -23,6 +23,11 @@ import OldInventory from './pages/OldInventory.jsx';
 import JobOrder from './pages/JobOrder.jsx';
 import FabricStockMtr from './pages/FabricStockMtr.jsx';
 import DailyInventoryQuantity from './pages/DailyInventoryQuantity.jsx';
+import SupervisorWiseReport from './pages/SupervisorWiseReport.jsx';
+import LocationWiseReport from './pages/LocationWiseReport.jsx';
+import DailyFabricIssueReport from './pages/DailyFabricIssueReport.jsx';
+import DyeingShortageReport from './pages/report.jsx';
+import CutterMasterWiseReport from './pages/CutterMasterWiseReport.jsx';
 
 
 export default function App() {
@@ -87,11 +92,11 @@ export default function App() {
           </div>
           <h1 className="splash-title">TEXTILE WAREHOUSE</h1>
           <p className="splash-subtitle">Management System</p>
-          
+
           <div className="splash-progress-track">
             <div className="splash-progress-fill"></div>
           </div>
-          
+
           <div className="splash-footer">Optimizing Fabric Storage & Production Flow...</div>
 
           <style>{`
@@ -238,51 +243,56 @@ export default function App() {
         </div>
       )}
       <BrowserRouter>
-      {user ? (
-        <Layout darkMode={darkMode} toggleDark={toggleDark} currentUser={user} handleLogout={handleLogout}>
+        {user ? (
+          <Layout darkMode={darkMode} toggleDark={toggleDark} currentUser={user} handleLogout={handleLogout}>
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/materials" element={<Materials />} />
+              <Route path="/fabric-sticker" element={<FabricStickerForm />} />
+              <Route path="/dyeing-material" element={<DyeingMaterialForm />} />
+              <Route path="/warehouse" element={<WarehousePage />} />
+              <Route path="/grn" element={<GRNPage />} />
+              <Route path="/issue" element={<IssuePage />} />
+              <Route path="/transfer" element={<TransferPage />} />
+              <Route path="/parta" element={<Parta />} />
+              <Route path="/fabric-receiving-history" element={<FabricReceivingHistoryPage />} />
+              <Route path="/recommendation" element={<Recommandation />} />
+              <Route path="/old-inventory" element={<OldInventory />} />
+              <Route path="/job-orders" element={<JobOrder />} />
+              <Route path="/fabric-stock" element={<FabricStockMtr />} />
+              <Route path="/reports/daily-inventory/quantity-wise" element={<DailyInventoryQuantity />} />
+              <Route path="/reports/daily-cutting/cutter-master" element={<CutterMasterWiseReport />} />
+              <Route path="/reports/daily-cutting/supervisor" element={<SupervisorWiseReport />} />
+              <Route path="/reports/daily-cutting/location" element={<LocationWiseReport />} />
+              <Route path="/reports/daily-fabric-issue" element={<DailyFabricIssueReport />} />
+              <Route path="/reports/dyeing-shortage" element={<DyeingShortageReport />} />
+              {user?.role !== 'Admin' && (
+                <Route path="/parta-pending" element={<PartaPendingPage />} />
+              )}
+              {user?.role === 'Admin' && (
+                <>
+                  <Route path="/reports" element={<ReportsPage />} />
+                  <Route path="/reports/stock" element={<ReportsPage />} />
+                  <Route path="/reports/warehouse" element={<ReportsPage />} />
+                  <Route path="/reports/movement" element={<ReportsPage />} />
+                  <Route path="/reports/supplier" element={<ReportsPage />} />
+                  <Route path="/settings" element={<SettingsPage darkMode={darkMode} toggleDark={toggleDark} />} />
+                </>
+              )}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Layout>
+        ) : (
           <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/materials" element={<Materials />} />
-            <Route path="/fabric-sticker" element={<FabricStickerForm />} />
-            <Route path="/dyeing-material" element={<DyeingMaterialForm />} />
-            <Route path="/warehouse" element={<WarehousePage />} />
-            <Route path="/grn" element={<GRNPage />} />
-            <Route path="/issue" element={<IssuePage />} />
-            <Route path="/transfer" element={<TransferPage />} />
-            <Route path="/parta" element={<Parta />} />
-            <Route path="/fabric-receiving-history" element={<FabricReceivingHistoryPage />} />
-            <Route path="/recommendation" element={<Recommandation />} />
-            <Route path="/old-inventory" element={<OldInventory />} />
-            <Route path="/job-orders" element={<JobOrder />} />
-            <Route path="/fabric-stock" element={<FabricStockMtr />} />
-            <Route path="/reports/daily-inventory/quantity-wise" element={<DailyInventoryQuantity />} />
-            {user?.role !== 'Admin' && (
-              <Route path="/parta-pending" element={<PartaPendingPage />} />
-            )}
-            {user?.role === 'Admin' && (
-              <>
-                <Route path="/reports" element={<ReportsPage />} />
-                <Route path="/reports/stock" element={<ReportsPage />} />
-                <Route path="/reports/warehouse" element={<ReportsPage />} />
-                <Route path="/reports/movement" element={<ReportsPage />} />
-                <Route path="/reports/supplier" element={<ReportsPage />} />
-                <Route path="/settings" element={<SettingsPage darkMode={darkMode} toggleDark={toggleDark} />} />
-              </>
-            )}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/login" element={<LoginPage setUser={setUser} />} />
+            <Route path="/register" element={<RegisterPage setUser={setUser} />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
-        </Layout>
-      ) : (
-        <Routes>
-          <Route path="/login" element={<LoginPage setUser={setUser} />} />
-          <Route path="/register" element={<RegisterPage setUser={setUser} />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      )}
-    </BrowserRouter>
-  </>
+        )}
+      </BrowserRouter>
+    </>
   );
 }
 

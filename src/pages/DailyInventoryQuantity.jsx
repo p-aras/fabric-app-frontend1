@@ -20,7 +20,11 @@ export default function DailyInventoryQuantity() {
     try {
       const response = await store.getDailyInventoryReport(dateStr);
       if (response && response.success) {
-        setReportData(response.data || []);
+        const mappedData = (response.data || []).map(item => ({
+          ...item,
+          rolls: 1
+        }));
+        setReportData(mappedData);
       } else {
         setReportData([]);
       }
