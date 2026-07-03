@@ -1,6 +1,6 @@
 export const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:5001/api'
-  : 'https://fabric-backend-9aua.onrender.com/api';
+  : 'https://fabric-app-backend-new.onrender.com/api';
 
 const getHeaders = () => {
   const token = localStorage.getItem('twms_token');
