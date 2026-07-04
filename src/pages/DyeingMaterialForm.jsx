@@ -19,8 +19,8 @@ const DYEING_DEFAULT_DATA = {
   shade: 'Dyeing Shade X',
   lotNumber: '',
   billNumber: '',
-  receivedPerson: 'Dyeing Operator',
-  authorizedPerson: 'Dyeing Manager',
+  receivedPerson: '',
+  authorizedPerson: '',
 };
 
 const DyeingMaterialForm = () => {
@@ -1210,8 +1210,6 @@ const DyeingMaterialForm = () => {
           fabricName: lotData.fabricName || prev.fabricName,
           group: lotData.group || prev.group,
           issuedShade: lotData.shade || prev.issuedShade,
-          billNumber: lotData.billNumber || prev.billNumber,
-          date: lotData.date || prev.date,
           receivedPerson: lotData.receivedPerson || prev.receivedPerson,
           authorizedPerson: lotData.authorizedPerson || prev.authorizedPerson,
         }));

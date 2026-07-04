@@ -1030,8 +1030,8 @@ const FabricStockMtr = () => {
           <h1>Add Fabric Stock (Meters)</h1>
         </div>
         <div className="page-actions">
-          <button 
-            className="btn-page-switch" 
+          <button
+            className="btn-page-switch"
             onClick={() => navigate('/fabric-sticker')}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
@@ -1091,13 +1091,13 @@ const FabricStockMtr = () => {
               <input
                 id="manual-meters-input"
                 className="form-control"
-                style={{ 
-                  fontSize: 24, 
-                  fontWeight: 800, 
-                  textAlign: 'center', 
-                  height: 54, 
-                  color: '#000000', 
-                  backgroundColor: '#ffffff', 
+                style={{
+                  fontSize: 24,
+                  fontWeight: 800,
+                  textAlign: 'center',
+                  height: 54,
+                  color: '#000000',
+                  backgroundColor: '#ffffff',
                   borderRadius: 'var(--radius-md)',
                   border: '2px solid rgba(255,255,255,0.2)'
                 }}

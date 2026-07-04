@@ -68,7 +68,7 @@ export default function CutterMasterWiseReport() {
       if (selectedTable !== 'All' && item.tableNumber !== selectedTable) {
         return false;
       }
-      
+
       // Search term filter
       const q = searchTerm.toLowerCase().trim();
       if (!q) return true;
@@ -105,7 +105,7 @@ export default function CutterMasterWiseReport() {
       const date = item.date || 'No Date';
       dailyMap[date] = (dailyMap[date] || 0) + (item.rolls || 0);
     });
-    
+
     return Object.entries(dailyMap)
       .map(([date, rolls]) => ({ date, rolls }))
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -118,7 +118,7 @@ export default function CutterMasterWiseReport() {
       const cm = item.cutterMaster || 'Unassigned';
       cmMap[cm] = (cmMap[cm] || 0) + (item.rolls || 0);
     });
-    
+
     return Object.entries(cmMap)
       .map(([cutterMaster, rolls]) => ({ cutterMaster, rolls }))
       .sort((a, b) => b.rolls - a.rolls);
@@ -178,15 +178,36 @@ export default function CutterMasterWiseReport() {
     XLSX.writeFile(wb, `Cutter_Master_Issuance_Report_${startDate}_to_${endDate}.xlsx`);
   };
 
-  // Export to PDF Summary
+  // Export to PDF Summary (Lot-Wise Aggregation)
   const exportToPdf = () => {
     if (filteredData.length === 0) {
       alert("No data available to export.");
       return;
     }
 
+    // Group filteredData lot-wise for PDF export
+    const lotMap = {};
+    filteredData.forEach(item => {
+      const key = `${item.date}|${item.cutterMaster}|${item.supervisor}|${item.tableNumber}|${item.lotNumber}|${item.fabric}`;
+      if (!lotMap[key]) {
+        lotMap[key] = {
+          date: item.date,
+          cutterMaster: item.cutterMaster,
+          supervisor: item.supervisor,
+          tableNumber: item.tableNumber,
+          lotNumber: item.lotNumber,
+          fabric: item.fabric,
+          rolls: 0,
+          weight: 0
+        };
+      }
+      lotMap[key].rolls += item.rolls || 0;
+      lotMap[key].weight += item.weight || 0;
+    });
+    const lotWiseData = Object.values(lotMap);
+
     const doc = new jsPDF({
-      orientation: "portrait",
+      orientation: "landscape",
       unit: "pt",
       format: "a4"
     });
@@ -230,37 +251,38 @@ export default function CutterMasterWiseReport() {
     doc.setLineWidth(1);
     doc.rect(M, y, PAGE_W - 2 * M, 45); // Outer border box
 
-    // Metrics vertical divider lines
-    doc.line(M + 130, y, M + 130, y + 45);
-    doc.line(M + 260, y, M + 260, y + 45);
-    doc.line(M + 395, y, M + 395, y + 45);
+    // Metrics vertical divider lines (Proportional spacing for landscape page width ~781pt)
+    const boxWidth = (PAGE_W - 2 * M) / 4;
+    doc.line(M + boxWidth, y, M + boxWidth, y + 45);
+    doc.line(M + 2 * boxWidth, y, M + 2 * boxWidth, y + 45);
+    doc.line(M + 3 * boxWidth, y, M + 3 * boxWidth, y + 45);
 
     doc.setTextColor(0, 0, 0);
     setFont("bold", 8);
-    doc.text("TOTAL ROLLS ISSUED", M + 10, y + 16);
-    doc.text("TOTAL WEIGHT ISSUED", M + 140, y + 16);
-    doc.text("ACTIVE CUTTER MASTERS", M + 270, y + 16);
-    doc.text("ACTIVE TABLES", M + 405, y + 16);
+    doc.text("TOTAL ROLLS ISSUED", M + 15, y + 16);
+    doc.text("TOTAL WEIGHT ISSUED", M + boxWidth + 15, y + 16);
+    doc.text("ACTIVE CUTTER MASTERS", M + 2 * boxWidth + 15, y + 16);
+    doc.text("ACTIVE TABLES", M + 3 * boxWidth + 15, y + 16);
 
     setFont("bold", 11);
-    doc.text(`${stats.totalRolls} Rolls`, M + 10, y + 34);
-    doc.text(`${stats.totalWeight.toFixed(2)} KG`, M + 140, y + 34);
-    doc.text(`${stats.cutterMasters.size}`, M + 270, y + 34);
-    doc.text(`${stats.tables.size}`, M + 405, y + 34);
+    doc.text(`${stats.totalRolls} Rolls`, M + 15, y + 34);
+    doc.text(`${stats.totalWeight.toFixed(2)} KG`, M + boxWidth + 15, y + 34);
+    doc.text(`${stats.cutterMasters.size}`, M + 2 * boxWidth + 15, y + 34);
+    doc.text(`${stats.tables.size}`, M + 3 * boxWidth + 15, y + 34);
 
     y += 65;
 
-    // Table Columns
+    // Table Columns (Lot-Wise layout: removed Shade)
     const headers = [
       { label: "SR", w: 25, align: "center" },
-      { label: "Date", w: 55, align: "left" },
-      { label: "Cutter Master", w: 85, align: "left" },
-      { label: "Supervisor", w: 80, align: "left" },
-      { label: "Table", w: 45, align: "left" },
-      { label: "Lot Number", w: 60, align: "left" },
-      { label: "Fabric Description", w: 105, align: "left" },
-      { label: "Shade", w: 55, align: "left" },
-      { label: "Rolls", w: 35, align: "right" }
+      { label: "Date", w: 70, align: "left" },
+      { label: "Cutter Master", w: 105, align: "left" },
+      { label: "Supervisor", w: 105, align: "left" },
+      { label: "Table", w: 60, align: "left" },
+      { label: "Lot Number", w: 80, align: "left" },
+      { label: "Fabric Description", w: 180, align: "left" },
+      { label: "Rolls", w: 50, align: "right" },
+      { label: "Weight (KG)", w: 65, align: "right" }
     ];
 
     const totalTableWidth = headers.reduce((sum, h) => sum + h.w, 0);
@@ -294,7 +316,7 @@ export default function CutterMasterWiseReport() {
     drawTableHeader(y);
     y += 22;
 
-    filteredData.forEach((item, idx) => {
+    lotWiseData.forEach((item, idx) => {
       if (y > PAGE_H - 55) {
         doc.addPage();
         drawPageBorder();
@@ -318,9 +340,9 @@ export default function CutterMasterWiseReport() {
         item.supervisor || "—",
         item.tableNumber || "—",
         item.lotNumber || "—",
-        String(item.fabric || "—").length > 25 ? String(item.fabric).substring(0, 22) + "..." : (item.fabric || "—"),
-        item.shade || "—",
-        (item.rolls || 0).toString()
+        String(item.fabric || "—").length > 45 ? String(item.fabric).substring(0, 42) + "..." : (item.fabric || "—"),
+        (item.rolls || 0).toString(),
+        parseFloat(item.weight || 0).toFixed(2)
       ];
 
       headers.forEach((h, colIdx) => {
@@ -405,7 +427,7 @@ export default function CutterMasterWiseReport() {
         border: '1px solid var(--border)'
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>Cutter Master Wise Report</h2>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>Cutter Table Wise Report</h2>
           <p style={{ margin: '4px 0 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
             Summary of fabric rolls issued to different production tables, grouped by Cutter Master.
           </p>

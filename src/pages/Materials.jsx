@@ -818,74 +818,107 @@ export default function Materials() {
       const drawTableHeader = (currentY) => {
         // Royal Blue header box
         doc.setFillColor(26, 86, 219);
-        doc.rect(M, currentY, PAGE_W - 2 * M, 20, 'F');
+        doc.rect(M, currentY, PAGE_W - 2 * M, 22, 'F');
+
+        // Draw white vertical dividers for headers
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.7);
+        let dividerX = M;
+        headers.forEach((h, hIdx) => {
+          if (hIdx > 0) {
+            doc.line(dividerX, currentY, dividerX, currentY + 22);
+          }
+          dividerX += h.w;
+        });
 
         doc.setTextColor(255, 255, 255);
         setFont("bold", 8);
 
         let curX = M;
         headers.forEach(h => {
-          let xOffset = 4;
-          if (h.align === "right") xOffset = h.w - 4;
+          let xOffset = 5;
+          if (h.align === "right") xOffset = h.w - 5;
           else if (h.align === "center") xOffset = h.w / 2;
 
-          doc.text(h.label, curX + xOffset, currentY + 13, { align: h.align });
+          doc.text(h.label, curX + xOffset, currentY + 14, { align: h.align });
           curX += h.w;
         });
       };
 
       drawTableHeader(y);
-      y += 20;
+      y += 22;
 
-      // Draw data rows
+      // Draw data rows (Dynamic Wrap Layout)
       filtered.forEach((item, idx) => {
-        if (y > PAGE_H - 35) {
-          doc.addPage();
-          drawPageBorder();
-          y = 30;
-          drawTableHeader(y);
-          y += 20;
-        }
-
-        // Draw row bottom line
-        doc.setDrawColor(241, 245, 249);
-        doc.setLineWidth(0.5);
-        doc.line(M, y + 16, PAGE_W - M, y + 16);
-
-        // Zebra stripes
-        if (idx % 2 === 1) {
-          doc.setFillColor(248, 250, 252);
-          doc.rect(M, y, PAGE_W - 2 * M, 16, 'F');
-        }
-
-        doc.setTextColor(15, 23, 42);
-        setFont("normal", 7.5);
-
-        let rowX = M;
         const rowVals = [
           item.code || "—",
-          String(item.name || "—").length > 30 ? String(item.name).substring(0, 27) + "..." : (item.name || "—"),
+          item.name || "—",
           item.category || "—",
           item.color || "—",
           item.lotNo || "—",
           getSupplierName(item.supplier),
-          `${item.weight} ${item.unit || 'Kg'}`,
+          `${item.weight} ${(item.inventoryType === 'Dyeing Material' || item.category === 'Dyeing') ? 'KGS' : (item.unit || 'Kg')}`,
           String(item.rolls || "0"),
           item.location || "—",
           item.status || "—"
         ];
 
-        headers.forEach((h, cIdx) => {
-          let val = rowVals[cIdx];
-          let xOffset = 4;
-          if (h.align === "right") xOffset = h.w - 4;
-          else if (h.align === "center") xOffset = h.w / 2;
+        // Split text to fit each column's scaled width (with 10pt horizontal cell padding)
+        const cellLines = rowVals.map((val, colIdx) => {
+          const colWidth = headers[colIdx].w - 10;
+          return doc.splitTextToSize(String(val), colWidth);
+        });
 
-          doc.text(val, rowX + xOffset, y + 11, { align: h.align });
+        // Determine row height based on maximum line count in any cell of this row
+        const maxLines = Math.max(...cellLines.map(lines => lines.length));
+        const rowHeight = 12 + (maxLines * 10); // Base padding + lines height
+
+        if (y + rowHeight > PAGE_H - 45) {
+          doc.addPage();
+          drawPageBorder();
+          y = 30;
+          drawTableHeader(y);
+          y += 22;
+        }
+
+        // Zebra stripes
+        if (idx % 2 === 1) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(M, y, PAGE_W - 2 * M, rowHeight, 'F');
+        }
+
+        // Draw border around the row
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.6);
+        doc.rect(M, y, PAGE_W - 2 * M, rowHeight);
+
+        // Draw vertical dividers
+        let dividerX = M;
+        headers.forEach((h, hIdx) => {
+          if (hIdx > 0) {
+            doc.line(dividerX, y, dividerX, y + rowHeight);
+          }
+          dividerX += h.w;
+        });
+
+        doc.setTextColor(15, 23, 42);
+        setFont("normal", 7.5);
+
+        let rowX = M;
+        headers.forEach((h, colIdx) => {
+          const lines = cellLines[colIdx];
+          let startX = rowX + 5;
+          if (h.align === "right") startX = rowX + h.w - 5;
+          else if (h.align === "center") startX = rowX + h.w / 2;
+
+          lines.forEach((line, lineIdx) => {
+            const lineY = y + 12 + (lineIdx * 10); // line spacing offset
+            doc.text(line, startX, lineY, { align: h.align });
+          });
           rowX += h.w;
         });
 
-        y += 16;
+        y += rowHeight;
       });
 
       doc.save(`Material_Master_Export_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -1129,7 +1162,7 @@ export default function Materials() {
                   <td>{m.color || '—'}</td>
                   <td style={{ fontWeight: 600 }}>{m.lotNo || '—'}</td>
                   <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{getSupplierName(m.supplier)}</td>
-                  <td>{m.weight} {m.unit || 'Kg'}</td>
+                  <td>{m.weight} {(m.inventoryType === 'Dyeing Material' || m.category === 'Dyeing') ? 'KGS' : (m.unit || 'Kg')}</td>
                   <td style={{ fontWeight: 700 }}>{m.rolls}</td>
                   <td><span className="tag" style={{ fontSize: 11 }}>{m.location}</span></td>
                   <td>
