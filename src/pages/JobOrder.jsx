@@ -4,7 +4,7 @@ import {
   Search, Eye, Download, ChevronLeft, ChevronRight,
   RefreshCw, Layers, Calendar, Filter, X, CheckCircle,
   AlertTriangle, Tag, Users, Package, SlidersHorizontal,
-  FolderHeart, UserCheck, Scissors, FileText
+  FolderHeart, UserCheck, Scissors, FileText, Star
 } from 'lucide-react';
 import { store, BASE_URL } from '../store.js';
 import * as XLSX from "xlsx-js-style";
@@ -425,11 +425,24 @@ export default function JobOrder() {
 
   // Master State
   const [jobOrders, setJobOrders] = useState([]);
+  const [issuedLots, setIssuedLots] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
   const [pdfBusyId, setPdfBusyId] = useState(null);
+
+  // Calculate lot frequency counts for highlighting repeated lots
+  const lotCounts = useMemo(() => {
+    const counts = new Map();
+    jobOrders.forEach((jo) => {
+      const lot = String(jo['Lot Number'] || jo['Lot No'] || '').trim();
+      if (lot) {
+        counts.set(lot, (counts.get(lot) || 0) + 1);
+      }
+    });
+    return counts;
+  }, [jobOrders]);
 
   // Collapsible Filters Panel (Master List)
   const [showFilters, setShowFilters] = useState(false);
@@ -493,6 +506,16 @@ export default function JobOrder() {
       setLoading(true);
       const data = await store.getJobOrders();
       setJobOrders(data || []);
+
+      // Fetch issued lots from database to detect "issued but not cut" status
+      try {
+        const res = await store.getIssuedLots();
+        if (res && res.success && res.lotNumbers) {
+          setIssuedLots(new Set(res.lotNumbers));
+        }
+      } catch (err) {
+        console.error('Failed to load issued lot numbers:', err);
+      }
     } catch (err) {
       console.error(err);
       alert('Failed to load job orders: ' + err.message);
@@ -515,7 +538,7 @@ export default function JobOrder() {
         // Respect logged-in supervisor filter unless Admin
         const userName = currentUser?.name || '';
         const userRole = currentUser?.role || '';
-        if (userRole !== 'Admin') {
+        if (userRole.trim().toLowerCase() !== 'admin') {
           rows = rows.filter(r => {
             const supervisor = String(r['FABRIC_SUPERVISOR'] || '').trim().toLowerCase();
             return supervisor === userName.trim().toLowerCase();
@@ -571,7 +594,7 @@ export default function JobOrder() {
     const userName = currentUser?.name || '';
     const userRole = currentUser?.role || '';
 
-    if (userRole === 'Admin') {
+    if (userRole.trim().toLowerCase() === 'admin') {
       return jobOrders;
     }
 
@@ -622,31 +645,100 @@ export default function JobOrder() {
     return map;
   }, [cuttingRows]);
 
+  const getCuttingStatusText = (lotNum, detailed = false) => {
+    if (!lotNum) return 'Fabric Issue Pending';
+
+    const cutInfo = cuttingMapByLot.get(lotNum);
+    const isIssued = issuedLots.has(lotNum);
+
+    if (cutInfo && cutInfo.Remarks.includes('Cutting Done')) {
+      return 'Cutting Done';
+    }
+
+    if (isIssued) {
+      return 'Fabric Issued but not cut';
+    }
+
+    if (cutInfo) {
+      if (cutInfo.Remarks.includes('Colour Pending')) {
+        if (detailed) {
+          const pendingShades = (pendingListByLot[lotNum] || []).join(', ');
+          return pendingShades ? `Colour Pending (${pendingShades})` : 'Colour Pending';
+        }
+        return 'Colour Pending';
+      }
+      if (cutInfo.Remarks.includes('Fabric Issue Pending')) return 'Fabric Issue Pending';
+      return cutInfo.Remarks || 'Fabric Issue Pending';
+    }
+
+    return 'Fabric Issue Pending';
+  };
+
+  const formatToYYYYMMDD = (val) => {
+    if (!val || val === '—') return '—';
+    try {
+      const dateStr = String(val).trim();
+      if (!dateStr) return '—';
+
+      // Handle ISO timestamp or YYYY-MM-DD
+      const datePart = dateStr.split('T')[0];
+      const parts = datePart.split('-');
+      if (parts.length === 3 && parts[0].length === 4) {
+        const year = parseInt(parts[0], 10);
+        const monthIdx = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        if (!isNaN(year) && monthIdx >= 0 && monthIdx < 12 && !isNaN(day)) {
+          return `${day} ${monthNames[monthIdx]} ${year}`;
+        }
+      }
+
+      // General fallback parsing
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const day = d.getDate();
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear();
+        return `${day} ${month} ${year}`;
+      }
+      return dateStr;
+    } catch {
+      return val;
+    }
+  };
+
   const stats = useMemo(() => {
     const total = supervisorFilteredJobOrders.length;
 
     let fabricIssuePending = 0;
     let colourPending = 0;
     let cuttingDone = 0;
+    let fabricIssuedButNotCut = 0;
 
     supervisorFilteredJobOrders.forEach(jo => {
       const lotNum = String(jo['Lot Number'] || '').trim();
-      if (!lotNum) {
+      const statusText = getCuttingStatusText(lotNum);
+
+      if (statusText === 'Fabric Issue Pending') {
         fabricIssuePending++;
-      } else {
-        const cutInfo = cuttingMapByLot.get(lotNum);
-        if (!cutInfo || cutInfo.inIndexSheet === false) {
-          fabricIssuePending++;
-        } else if (cutInfo.Remarks.includes('Colour Pending')) {
-          colourPending++;
-        } else if (cutInfo.Remarks.includes('Cutting Done')) {
-          cuttingDone++;
-        }
+      } else if (statusText === 'Fabric Issued but not cut') {
+        fabricIssuedButNotCut++;
+      } else if (statusText === 'Colour Pending') {
+        colourPending++;
+      } else if (statusText === 'Cutting Done') {
+        cuttingDone++;
       }
     });
 
-    return { total, fabricIssuePending, colourPending, cuttingDone };
-  }, [supervisorFilteredJobOrders, cuttingMapByLot]);
+    return { total, fabricIssuePending, colourPending, cuttingDone, fabricIssuedButNotCut };
+  }, [supervisorFilteredJobOrders, cuttingMapByLot, issuedLots]);
 
   const filtered = useMemo(() => {
     return supervisorFilteredJobOrders.filter(jo => {
@@ -672,20 +764,8 @@ export default function JobOrder() {
       // Apply KPI card status filter if active; otherwise fall back to onlyUncut checkbox filter
       if (cuttingStatusFilter !== 'All') {
         const lotNum = String(jo['Lot Number'] || '').trim();
-        if (!lotNum) {
-          if (cuttingStatusFilter !== 'Fabric Issue Pending') return false;
-        } else {
-          const cutInfo = cuttingMapByLot.get(lotNum);
-          if (!cutInfo || cutInfo.inIndexSheet === false) {
-            if (cuttingStatusFilter !== 'Fabric Issue Pending') return false;
-          } else if (cutInfo.Remarks.includes('Colour Pending')) {
-            if (cuttingStatusFilter !== 'Colour Pending') return false;
-          } else if (cutInfo.Remarks.includes('Cutting Done')) {
-            if (cuttingStatusFilter !== 'Cutting Done') return false;
-          } else {
-            return false;
-          }
-        }
+        const statusText = getCuttingStatusText(lotNum);
+        if (statusText !== cuttingStatusFilter) return false;
       } else if (onlyUncut) {
         const lotNum = String(jo['Lot Number'] || '').trim();
         if (lotNum) {
@@ -698,7 +778,7 @@ export default function JobOrder() {
 
       return matchQ && matchBrand && matchStatus && matchSeason && matchFabric && matchParty && matchGarment && matchSection && matchSubmittedBy;
     });
-  }, [supervisorFilteredJobOrders, search, selectedBrand, selectedStatus, selectedSeason, selectedFabric, selectedParty, selectedGarment, selectedSection, selectedSubmittedBy, onlyUncut, cuttingMapByLot, cuttingStatusFilter]);
+  }, [supervisorFilteredJobOrders, search, selectedBrand, selectedStatus, selectedSeason, selectedFabric, selectedParty, selectedGarment, selectedSection, selectedSubmittedBy, onlyUncut, cuttingMapByLot, cuttingStatusFilter, issuedLots]);
 
   const paginated = useMemo(() => {
     const start = (page - 1) * limit;
@@ -997,6 +1077,216 @@ export default function JobOrder() {
     }
   };
 
+  const exportMasterToPdf = async () => {
+    try {
+      const jsPDF = await loadJsPDF();
+      const doc = new jsPDF('l', 'pt', 'a4');
+      const totalPagesEstimate = Math.ceil(filtered.length / 22) || 1;
+
+      // Column definitions
+      const columns = [
+        { header: 'JO No', width: 60, align: 'center', key: 'Job Order No' },
+        { header: 'Date', width: 55, align: 'center', key: 'Date' },
+        { header: 'Lot NO.', width: 45, align: 'center', key: 'Lot Number' },
+        { header: 'Fabric', width: 75, align: 'center', key: 'Fabric' },
+        { header: 'Garment Type', width: 65, align: 'center', key: 'Garment Type' },
+        { header: 'Brand', width: 55, align: 'center', key: 'Brand' },
+        { header: 'Style', width: 75, align: 'center', key: 'Style' },
+        { header: 'Priority', width: 40, align: 'center', key: 'Priority' },
+        { header: 'Total pcs', width: 45, align: 'center', key: 'Quantity' },
+        { header: 'Issued Date', width: 65, align: 'center', key: 'fabricIssuedDate' },
+        { header: 'Cut Date', width: 65, align: 'center', key: 'cuttingDate' },
+        { header: 'Days', width: 45, align: 'center', key: 'Days' },
+        { header: 'Status', width: 92, align: 'center', key: 'Status' }
+      ];
+
+      const startX = 30;
+      const startYInitial = 80;
+      const tableWidth = 782;
+      const pageHeight = 595;
+
+      const drawHeader = (doc, pageNum) => {
+        // Tally style outer border
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(1);
+        doc.rect(startX, 30, tableWidth, pageHeight - 60);
+
+        // Header Title
+        doc.setFont('times', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text('CUTTING REPORT', startX + 10, 48);
+
+        doc.setFont('times', 'normal');
+        doc.setFontSize(9);
+        doc.text('CUTTING Master Report', startX + 10, 62);
+
+        const dateStr = `Printed: ${new Date().toLocaleString()}`;
+        doc.text(dateStr, startX + tableWidth - 10 - doc.getTextWidth(dateStr), 62);
+
+        // Double lines below report info
+        doc.setLineWidth(0.5);
+        doc.line(startX, 70, startX + tableWidth, 70);
+        doc.line(startX, 72, startX + tableWidth, 72);
+
+        // Table Header
+        let currentX = startX;
+        doc.setFont('times', 'bold');
+        doc.setFontSize(8.5);
+
+        // Draw Header text
+        columns.forEach(col => {
+          let alignX = currentX + 5;
+          if (col.align === 'right') {
+            alignX = currentX + col.width - 5 - doc.getTextWidth(col.header);
+          } else if (col.align === 'center') {
+            alignX = currentX + (col.width - doc.getTextWidth(col.header)) / 2;
+          }
+          doc.text(col.header, alignX, 86);
+          currentX += col.width;
+        });
+
+        // Double lines below table header
+        doc.line(startX, 94, startX + tableWidth, 94);
+        doc.line(startX, 96, startX + tableWidth, 96);
+
+        // Draw vertical lines in header
+        let lineX = startX;
+        columns.forEach(col => {
+          lineX += col.width;
+          if (lineX < startX + tableWidth) {
+            doc.line(lineX, 72, lineX, 96);
+          }
+        });
+
+        // Footer Page Number
+        doc.setFont('times', 'normal');
+        doc.setFontSize(8);
+        const pageText = `Page ${pageNum} of ${totalPagesEstimate}`;
+        doc.text(pageText, startX + tableWidth / 2 - doc.getTextWidth(pageText) / 2, pageHeight - 42);
+      };
+
+      let pageNum = 1;
+      drawHeader(doc, pageNum);
+
+      let currentY = 96; // Start exactly below table header double lines
+      let totalPcsSum = 0;
+
+      filtered.forEach((jo, index) => {
+        const lotNum = String(jo['Lot Number'] || '').trim();
+        const cutInfo = cuttingMapByLot.get(lotNum);
+        const qtyVal = cutInfo ? parseFloat(cutInfo['Total Qty']) || 0 : 0;
+
+        // Pre-calculate line splitting and maxRowLines for this row
+        const colLines = {};
+        let maxRowLines = 1;
+
+        columns.forEach(col => {
+          let val = '';
+          if (col.key === 'Quantity') {
+            val = qtyVal > 0 ? qtyVal.toLocaleString() : '0';
+          } else if (col.key === 'Status') {
+            val = getCuttingStatusText(lotNum, true);
+          } else if (col.key === 'fabricIssuedDate') {
+            val = formatToYYYYMMDD(jo['fabricIssuedDate']);
+          } else if (col.key === 'cuttingDate') {
+            val = cutInfo ? formatToYYYYMMDD(cutInfo['Cutting Date']) : '—';
+          } else if (col.key === 'Days') {
+            const issuedRaw = jo['fabricIssuedDate'];
+            const cutRaw = cutInfo ? cutInfo['Cutting Date'] : null;
+            if (issuedRaw && cutRaw) {
+              const issued = new Date(issuedRaw);
+              const cut = new Date(cutRaw);
+              if (!isNaN(issued.getTime()) && !isNaN(cut.getTime())) {
+                const diffTime = cut.getTime() - issued.getTime();
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                val = diffDays >= 0 ? `${diffDays}` : '—';
+              } else {
+                val = '—';
+              }
+            } else {
+              val = '—';
+            }
+          } else {
+            val = String(jo[col.key] || '—');
+          }
+
+          // Split text into lines matching column width
+          const lines = doc.splitTextToSize(val, col.width - 10);
+          colLines[col.key] = lines;
+          maxRowLines = Math.max(maxRowLines, lines.length);
+        });
+
+        // Dynamic row height based on max wrapped lines
+        const calculatedRowHeight = maxRowLines * 10 + 10;
+
+        // If we exceed printable height, draw bottom border, add page and reset
+        if (currentY + calculatedRowHeight > 520) {
+          doc.setLineWidth(1);
+          doc.setDrawColor(0, 0, 0);
+          doc.line(startX, currentY, startX + tableWidth, currentY);
+
+          doc.addPage();
+          pageNum++;
+          drawHeader(doc, pageNum);
+          currentY = 96;
+        }
+
+        // Add quantity to sum
+        totalPcsSum += qtyVal;
+
+        // Draw Cell values and vertical borders
+        let colX = startX;
+        doc.setFont('times', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(0, 0, 0);
+
+        columns.forEach(col => {
+          const lines = colLines[col.key];
+
+          lines.forEach((lineText, lineIdx) => {
+            let alignX = colX + 5;
+            if (col.align === 'right') {
+              alignX = colX + col.width - 5 - doc.getTextWidth(lineText);
+            } else if (col.align === 'center') {
+              alignX = colX + (col.width - doc.getTextWidth(lineText)) / 2;
+            }
+            doc.text(lineText, alignX, currentY + 12 + lineIdx * 10);
+          });
+
+          // Draw vertical border for cell
+          doc.setLineWidth(0.5);
+          doc.setDrawColor(0, 0, 0);
+          doc.line(colX, currentY, colX, currentY + calculatedRowHeight);
+
+          colX += col.width;
+        });
+
+        // Draw last vertical border on the right
+        doc.line(startX + tableWidth, currentY, startX + tableWidth, currentY + calculatedRowHeight);
+
+        // Update Y position
+        currentY += calculatedRowHeight;
+
+        // Draw horizontal grid line below the row
+        doc.setLineWidth(0.5);
+        doc.setDrawColor(180, 180, 180);
+        doc.line(startX, currentY, startX + tableWidth, currentY);
+      });
+
+      // Draw horizontal line at the end of data to close the table (thick boundary)
+      doc.setLineWidth(1);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(startX, currentY, startX + tableWidth, currentY);
+
+      // Save PDF
+      doc.save(`JobOrdersMasterReport_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert(`Failed to export PDF: ${e.message}`);
+    }
+  };
+
   // ==========================================
   // CUTTING EXPORTS (EXCEL & PDF)
   // ==========================================
@@ -1023,6 +1313,185 @@ export default function JobOrder() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Cutting Stats");
     XLSX.writeFile(wb, `Cutting_Pending_Lots_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const exportCuttingToPdf = async () => {
+    try {
+      const jsPDF = await loadJsPDF();
+      const doc = new jsPDF('l', 'pt', 'a4');
+      const totalPagesEstimate = Math.ceil(cFiltered.length / 22) || 1;
+
+      const columns = [
+        { header: 'Lot No', width: 60, align: 'left', key: 'Lot No' },
+        { header: 'Job Order No', width: 85, align: 'left', key: 'Job Order No' },
+        { header: 'Remarks / Action', width: 135, align: 'left', key: 'Remarks' },
+        { header: 'Pending Shades', width: 110, align: 'left', key: 'Pending Shades' },
+        { header: 'Fabric Quality', width: 125, align: 'left', key: 'Fabric' },
+        { header: 'Brand', width: 80, align: 'left', key: 'Brand' },
+        { header: 'Garment', width: 85, align: 'left', key: 'Garment Type' },
+        { header: 'PO Date', width: 62, align: 'left', key: 'PO Date' },
+        { header: 'Total Pcs', width: 40, align: 'right', key: 'Total Qty' }
+      ];
+
+      const startX = 30;
+      const startYInitial = 80;
+      const tableWidth = 782;
+      const pageHeight = 595;
+
+      const drawHeader = (doc, pageNum) => {
+        // Tally style outer border
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(1);
+        doc.rect(startX, 30, tableWidth, pageHeight - 60);
+
+        // Header Title
+        doc.setFont('times', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text('TEXTILE WAREHOUSE MANAGEMENT SYSTEM', startX + 10, 48);
+
+        doc.setFont('times', 'normal');
+        doc.setFontSize(9);
+        doc.text('Pending Cutting Sheet Report', startX + 10, 62);
+
+        const dateStr = `Printed: ${new Date().toLocaleString()}`;
+        doc.text(dateStr, startX + tableWidth - 10 - doc.getTextWidth(dateStr), 62);
+
+        // Double lines below report info
+        doc.setLineWidth(0.5);
+        doc.line(startX, 70, startX + tableWidth, 70);
+        doc.line(startX, 72, startX + tableWidth, 72);
+
+        // Table Header
+        let currentX = startX;
+        doc.setFont('times', 'bold');
+        doc.setFontSize(8.5);
+
+        columns.forEach(col => {
+          let alignX = currentX + 5;
+          if (col.align === 'right') {
+            alignX = currentX + col.width - 5 - doc.getTextWidth(col.header);
+          } else if (col.align === 'center') {
+            alignX = currentX + (col.width - doc.getTextWidth(col.header)) / 2;
+          }
+          doc.text(col.header, alignX, 86);
+          currentX += col.width;
+        });
+
+        // Double lines below table header
+        doc.line(startX, 94, startX + tableWidth, 94);
+        doc.line(startX, 96, startX + tableWidth, 96);
+
+        // Draw vertical lines in header
+        let lineX = startX;
+        columns.forEach(col => {
+          lineX += col.width;
+          if (lineX < startX + tableWidth) {
+            doc.line(lineX, 72, lineX, 96);
+          }
+        });
+
+        // Footer Page Number
+        doc.setFont('times', 'normal');
+        doc.setFontSize(8);
+        const pageText = `Page ${pageNum} of ${totalPagesEstimate}`;
+        doc.text(pageText, startX + tableWidth / 2 - doc.getTextWidth(pageText) / 2, pageHeight - 42);
+      };
+
+      let pageNum = 1;
+      drawHeader(doc, pageNum);
+
+      let currentY = 96; // Start after header double line
+      let totalPcsSum = 0;
+
+      cFiltered.forEach((r, index) => {
+        const lotNum = String(r['Lot No'] || '').trim();
+        const qtyVal = parseFloat(r['Total Qty']) || 0;
+
+        // Pre-calculate line splitting and maxRowLines for this row
+        const colLines = {};
+        let maxRowLines = 1;
+
+        columns.forEach(col => {
+          let val = '';
+          if (col.key === 'Pending Shades') {
+            val = (pendingListByLot[lotNum] || []).join(', ') || '—';
+          } else if (col.key === 'Total Qty') {
+            val = qtyVal > 0 ? qtyVal.toLocaleString() : '—';
+          } else {
+            val = String(r[col.key] || '—');
+          }
+
+          // Split text into lines matching column width
+          const lines = doc.splitTextToSize(val, col.width - 10);
+          colLines[col.key] = lines;
+          maxRowLines = Math.max(maxRowLines, lines.length);
+        });
+
+        const calculatedRowHeight = maxRowLines * 10 + 10;
+
+        if (currentY + calculatedRowHeight > 520) {
+          doc.setLineWidth(1);
+          doc.setDrawColor(0, 0, 0);
+          doc.line(startX, currentY, startX + tableWidth, currentY);
+
+          doc.addPage();
+          pageNum++;
+          drawHeader(doc, pageNum);
+          currentY = 96;
+        }
+
+        totalPcsSum += qtyVal;
+
+        // Draw Cell values and vertical borders
+        let colX = startX;
+        doc.setFont('times', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(0, 0, 0);
+
+        columns.forEach(col => {
+          const lines = colLines[col.key];
+
+          lines.forEach((lineText, lineIdx) => {
+            let alignX = colX + 5;
+            if (col.align === 'right') {
+              alignX = colX + col.width - 5 - doc.getTextWidth(lineText);
+            } else if (col.align === 'center') {
+              alignX = colX + (col.width - doc.getTextWidth(lineText)) / 2;
+            }
+            doc.text(lineText, alignX, currentY + 12 + lineIdx * 10);
+          });
+
+          // Draw vertical border for cell
+          doc.setLineWidth(0.5);
+          doc.setDrawColor(0, 0, 0);
+          doc.line(colX, currentY, colX, currentY + calculatedRowHeight);
+
+          colX += col.width;
+        });
+
+        // Draw last vertical border on the right
+        doc.line(startX + tableWidth, currentY, startX + tableWidth, currentY + calculatedRowHeight);
+
+        // Update Y position
+        currentY += calculatedRowHeight;
+
+        // Draw horizontal grid line below the row
+        doc.setLineWidth(0.5);
+        doc.setDrawColor(180, 180, 180);
+        doc.line(startX, currentY, startX + tableWidth, currentY);
+      });
+
+      // Draw horizontal line at the end of data to close the table (thick boundary)
+      doc.setLineWidth(1);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(startX, currentY, startX + tableWidth, currentY);
+
+      doc.save(`PendingCuttingReport_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert(`Failed to export PDF: ${e.message}`);
+    }
   };
 
   const exportSingleJobOrderPdf = async (row) => {
@@ -1162,7 +1631,7 @@ export default function JobOrder() {
       };
 
       const setFont = (weight, size) => {
-        doc.setFont("Helvetica", weight);
+        doc.setFont("times", weight);
         doc.setFontSize(size);
         doc.setTextColor(...C.black);
       };
@@ -1571,20 +2040,30 @@ export default function JobOrder() {
 
 
       const drawInventorySuggestionPage = () => {
+        let suggestionPageNum = 1;
         const titleY = 40;
-        setFont("bold", 18);
-        doc.text("INVENTORY LOCATION SUGGESTION SHEET", LANDSCAPE_W / 2, titleY, { align: "center" });
 
-        setFont("normal", 10);
-        doc.text(
-          `Suggested storage locations in active inventory matching Fabric: "${row["Fabric"]}" and Shades: "${queryShades.join(', ')}"`,
-          LANDSCAPE_W / 2, titleY + 16, { align: "center" }
-        );
+        const drawPageTitleHeader = () => {
+          setFont("bold", 18);
+          doc.text("INVENTORY LOCATION SUGGESTION SHEET", LANDSCAPE_W / 2, titleY, { align: "center" });
 
-        // Draw separator line
-        doc.setDrawColor(...C.black);
-        doc.setLineWidth(1);
-        doc.line(M, titleY + 28, LANDSCAPE_W - M, titleY + 28);
+          setFont("normal", 10);
+          doc.text(
+            `Suggested storage locations in active inventory matching Fabric: "${row["Fabric"]}" and Shades: "${queryShades.join(', ')}"`,
+            LANDSCAPE_W / 2, titleY + 16, { align: "center" }
+          );
+
+          // Draw separator line
+          doc.setDrawColor(...C.black);
+          doc.setLineWidth(1);
+          doc.line(M, titleY + 28, LANDSCAPE_W - M, titleY + 28);
+
+          // Page Number footer
+          setFont("normal", 9);
+          doc.text(`Page ${suggestionPageNum}`, LANDSCAPE_W - M, LANDSCAPE_H - 25, { align: "right" });
+        };
+
+        drawPageTitleHeader();
 
         let startY = titleY + 50;
 
@@ -1620,39 +2099,35 @@ export default function JobOrder() {
 
         const totalRatio = suggestionHeaders.reduce((sum, h) => sum + h.width, 0);
 
-        doc.setFillColor(240, 244, 248);
-        doc.rect(tableX, startY, tableWidth, ROW_HEIGHT, "F");
-        doc.setDrawColor(...C.black);
-        doc.setLineWidth(1.2);
-        doc.rect(tableX, startY, tableWidth, ROW_HEIGHT);
+        const drawTableHeaderRow = (y) => {
+          doc.setFillColor(240, 244, 248);
+          doc.rect(tableX, y, tableWidth, ROW_HEIGHT, "F");
+          doc.setDrawColor(...C.black);
+          doc.setLineWidth(1.2);
+          doc.rect(tableX, y, tableWidth, ROW_HEIGHT);
 
-        let currentX = tableX;
-        suggestionHeaders.forEach((h) => {
-          const colWidth = (h.width / totalRatio) * tableWidth;
-          doc.setLineWidth(0.5);
-          doc.line(currentX, startY, currentX, startY + ROW_HEIGHT);
-          setFont("bold", 9);
-          doc.text(h.label, currentX + colWidth / 2, startY + ROW_HEIGHT / 2 + 3, { align: "center" });
-          currentX += colWidth;
-        });
+          let currentX = tableX;
+          suggestionHeaders.forEach((h) => {
+            const colWidth = (h.width / totalRatio) * tableWidth;
+            doc.setLineWidth(0.5);
+            doc.line(currentX, y, currentX, y + ROW_HEIGHT);
+            setFont("bold", 9);
+            doc.text(h.label, currentX + colWidth / 2, y + ROW_HEIGHT / 2 + 3, { align: "center" });
+            currentX += colWidth;
+          });
+        };
+
+        drawTableHeaderRow(startY);
 
         // Draw rows
         let rowY = startY + ROW_HEIGHT;
-        const maxRowsSuggestion = 22; // Maximum suggestions to fit on page
+        const maxRowsSuggestion = 40;
         const displayRows = inventorySuggestions.slice(0, maxRowsSuggestion);
 
         displayRows.forEach((item, idx) => {
-          doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 253);
-          doc.rect(tableX, rowY, tableWidth, ROW_HEIGHT, "F");
-          doc.setDrawColor(...C.black);
-          doc.setLineWidth(0.3);
-          doc.rect(tableX, rowY, tableWidth, ROW_HEIGHT);
-
-          let curX = tableX;
-
           const barcodesArray = Array.from(item.barcodes || []);
-          const barcodesText = barcodesArray.length > 3
-            ? barcodesArray.slice(0, 3).join(', ') + ` (+${barcodesArray.length - 3} more)`
+          const barcodesText = barcodesArray.length > 10
+            ? barcodesArray.slice(0, 10).join(', ') + ' --'
             : barcodesArray.join(', ');
 
           const rowData = [
@@ -1666,27 +2141,86 @@ export default function JobOrder() {
             parseInt(item.totalRolls || 0).toString()
           ];
 
+          // Compute wrapped lines and height for this row
+          const colLines = {};
+          let maxRowLines = 1;
+
           suggestionHeaders.forEach((h, colIdx) => {
             const colWidth = (h.width / totalRatio) * tableWidth;
-            doc.line(curX, rowY, curX, rowY + ROW_HEIGHT);
+            const textValue = rowData[colIdx];
+            const lines = doc.splitTextToSize(textValue, colWidth - 10);
+            colLines[colIdx] = lines;
+            maxRowLines = Math.max(maxRowLines, lines.length);
+          });
 
-            if (colIdx === 2) {
-              setFont("normal", 8.5);
-              doc.text(shortenText(rowData[colIdx], 42), curX + 10, rowY + ROW_HEIGHT / 2 + 2);
-            } else if (colIdx === 5) {
-              setFont("bold", 9);
-              doc.setTextColor(95, 61, 196); // highlight store location in brand violet
-              doc.text(rowData[colIdx], curX + colWidth / 2, rowY + ROW_HEIGHT / 2 + 2, { align: "center" });
-              doc.setTextColor(0, 0, 0); // reset color
-            } else {
-              setFont("normal", 8.5);
-              doc.text(rowData[colIdx], curX + colWidth / 2, rowY + ROW_HEIGHT / 2 + 2, { align: "center" });
-            }
+          const calculatedRowHeight = maxRowLines * 11 + 10;
+
+          // Page break check (Landscape A3 height is 842pt)
+          if (rowY + calculatedRowHeight > 780) {
+            // Draw table bottom border
+            doc.setLineWidth(1.2);
+            doc.setDrawColor(...C.black);
+            doc.line(tableX, rowY, tableX + tableWidth, rowY);
+
+            doc.addPage();
+            suggestionPageNum++;
+            drawPageTitleHeader();
+
+            rowY = titleY + 50;
+            drawTableHeaderRow(rowY);
+            rowY += ROW_HEIGHT;
+          }
+
+          // Draw row cells
+          doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 253);
+          doc.rect(tableX, rowY, tableWidth, calculatedRowHeight, "F");
+
+          let curX = tableX;
+          suggestionHeaders.forEach((h, colIdx) => {
+            const colWidth = (h.width / totalRatio) * tableWidth;
+
+            // Draw cell text
+            const lines = colLines[colIdx];
+            lines.forEach((lineText, lineIdx) => {
+              let alignX = curX + 5;
+              let isCenter = colIdx !== 2 && colIdx !== 1; // Left align fabric and barcodes, center others
+              if (isCenter) {
+                alignX = curX + colWidth / 2 - doc.getTextWidth(lineText) / 2;
+              }
+
+              if (colIdx === 5) {
+                setFont("bold", 9);
+                doc.setTextColor(95, 61, 196); // highlight store location in brand violet
+              } else {
+                setFont("normal", 8.5);
+                doc.setTextColor(0, 0, 0);
+              }
+
+              doc.text(lineText, alignX, rowY + 12 + lineIdx * 11);
+            });
+
+            // Draw vertical cell borders
+            doc.setDrawColor(...C.black);
+            doc.setLineWidth(0.3);
+            doc.line(curX, rowY, curX, rowY + calculatedRowHeight);
+
             curX += colWidth;
           });
 
-          rowY += ROW_HEIGHT;
+          // Draw last vertical cell border
+          doc.line(tableX + tableWidth, rowY, tableX + tableWidth, rowY + calculatedRowHeight);
+
+          // Update Y position
+          rowY += calculatedRowHeight;
+
+          // Draw horizontal border under the row
+          doc.setLineWidth(0.3);
+          doc.line(tableX, rowY, tableX + tableWidth, rowY);
         });
+
+        // Draw last bottom border
+        doc.setLineWidth(1.2);
+        doc.line(tableX, rowY, tableX + tableWidth, rowY);
 
         if (inventorySuggestions.length > maxRowsSuggestion) {
           setFont("italic", 9);
@@ -1756,39 +2290,63 @@ export default function JobOrder() {
       </div>
 
       {/* TABS CONTROLLER (Master List vs Cutting Sheet tab) */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', gap: 8, marginTop: 4 }}>
+      <div style={{
+        display: 'inline-flex',
+        backgroundColor: 'var(--card-bg)',
+        padding: '6px',
+        borderRadius: '30px',
+        border: '1px solid var(--border)',
+        boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
+        gap: 6,
+        alignSelf: 'flex-start',
+        marginTop: 8
+      }}>
         <button
           className={`btn ${activeTab === 'master' ? 'btn-primary' : 'btn-ghost'}`}
           onClick={() => setActiveTab('master')}
           style={{
-            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
-            borderBottom: activeTab === 'master' ? '2px solid var(--primary)' : 'none',
+            borderRadius: '24px',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '12px 24px',
-            fontSize: '14px',
-            fontWeight: 700
+            padding: '10px 24px',
+            fontSize: '13px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.03em',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            backgroundColor: activeTab === 'master' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'master' ? '#ffffff' : 'var(--text-secondary)',
+            boxShadow: activeTab === 'master' ? '0 4px 12px rgba(59, 130, 246, 0.25)' : 'none',
+            border: 'none',
+            height: 'auto'
           }}
         >
-          <Layers size={16} />
+          <Layers size={15} />
           <span>Master Job Orders</span>
         </button>
         <button
           className={`btn ${activeTab === 'cutting' ? 'btn-primary' : 'btn-ghost'}`}
           onClick={() => setActiveTab('cutting')}
           style={{
-            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
-            borderBottom: activeTab === 'cutting' ? '2px solid var(--primary)' : 'none',
+            borderRadius: '24px',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '12px 24px',
-            fontSize: '14px',
-            fontWeight: 700
+            padding: '10px 24px',
+            fontSize: '13px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.03em',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            backgroundColor: activeTab === 'cutting' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'cutting' ? '#ffffff' : 'var(--text-secondary)',
+            boxShadow: activeTab === 'cutting' ? '0 4px 12px rgba(59, 130, 246, 0.25)' : 'none',
+            border: 'none',
+            height: 'auto'
           }}
         >
-          <Scissors size={16} />
+          <Scissors size={15} />
           <span>Pending Cutting Sheet</span>
         </button>
       </div>
@@ -1805,24 +2363,27 @@ export default function JobOrder() {
               className="card metrics-card"
               onClick={() => setCuttingStatusFilter('All')}
               style={{
+                background: cuttingStatusFilter === 'All'
+                  ? 'linear-gradient(135deg, var(--card-bg) 0%, rgba(59, 130, 246, 0.05) 100%)'
+                  : 'var(--card-bg)',
+                border: cuttingStatusFilter === 'All' ? '1px solid var(--primary)' : '1px solid var(--border)',
                 borderLeft: '4px solid var(--primary)',
-                borderTop: cuttingStatusFilter === 'All' ? '2px solid var(--primary)' : '1px solid var(--border)',
-                borderRight: cuttingStatusFilter === 'All' ? '2px solid var(--primary)' : '1px solid var(--border)',
-                borderBottom: cuttingStatusFilter === 'All' ? '2px solid var(--primary)' : '1px solid var(--border)',
                 cursor: 'pointer',
                 position: 'relative',
                 overflow: 'hidden',
-                transition: 'all 0.2s ease',
-                transform: cuttingStatusFilter === 'All' ? 'scale(1.01)' : 'none',
-                boxShadow: cuttingStatusFilter === 'All' ? '0 4px 6px -1px rgba(59, 130, 246, 0.15)' : 'none'
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: cuttingStatusFilter === 'All' ? 'translateY(-2px)' : 'none',
+                boxShadow: cuttingStatusFilter === 'All'
+                  ? '0 10px 15px -3px rgba(59, 130, 246, 0.12), 0 4px 6px -2px rgba(59, 130, 246, 0.05)'
+                  : '0 2px 8px rgba(0,0,0,0.02)'
               }}
             >
               <div className="card-body" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>
+                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Layers size={22} />
                 </div>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Orders</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Orders</span>
                   <strong style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)' }}>{stats.total.toLocaleString()}</strong>
                 </div>
               </div>
@@ -1833,24 +2394,27 @@ export default function JobOrder() {
               className="card metrics-card"
               onClick={() => setCuttingStatusFilter(cuttingStatusFilter === 'Fabric Issue Pending' ? 'All' : 'Fabric Issue Pending')}
               style={{
+                background: cuttingStatusFilter === 'Fabric Issue Pending'
+                  ? 'linear-gradient(135deg, var(--card-bg) 0%, rgba(239, 68, 68, 0.05) 100%)'
+                  : 'var(--card-bg)',
+                border: cuttingStatusFilter === 'Fabric Issue Pending' ? '1px solid var(--danger)' : '1px solid var(--border)',
                 borderLeft: '4px solid var(--danger)',
-                borderTop: cuttingStatusFilter === 'Fabric Issue Pending' ? '2px solid var(--danger)' : '1px solid var(--border)',
-                borderRight: cuttingStatusFilter === 'Fabric Issue Pending' ? '2px solid var(--danger)' : '1px solid var(--border)',
-                borderBottom: cuttingStatusFilter === 'Fabric Issue Pending' ? '2px solid var(--danger)' : '1px solid var(--border)',
                 cursor: 'pointer',
                 position: 'relative',
                 overflow: 'hidden',
-                transition: 'all 0.2s ease',
-                transform: cuttingStatusFilter === 'Fabric Issue Pending' ? 'scale(1.01)' : 'none',
-                boxShadow: cuttingStatusFilter === 'Fabric Issue Pending' ? '0 4px 6px -1px rgba(239, 68, 68, 0.15)' : 'none'
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: cuttingStatusFilter === 'Fabric Issue Pending' ? 'translateY(-2px)' : 'none',
+                boxShadow: cuttingStatusFilter === 'Fabric Issue Pending'
+                  ? '0 10px 15px -3px rgba(239, 68, 68, 0.12), 0 4px 6px -2px rgba(239, 68, 68, 0.05)'
+                  : '0 2px 8px rgba(0,0,0,0.02)'
               }}
             >
               <div className="card-body" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)' }}>
+                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <AlertTriangle size={22} />
                 </div>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fabric Issue Pending</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fabric Issue Pending</span>
                   <strong style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)' }}>{stats.fabricIssuePending.toLocaleString()}</strong>
                 </div>
               </div>
@@ -1861,24 +2425,27 @@ export default function JobOrder() {
               className="card metrics-card"
               onClick={() => setCuttingStatusFilter(cuttingStatusFilter === 'Colour Pending' ? 'All' : 'Colour Pending')}
               style={{
+                background: cuttingStatusFilter === 'Colour Pending'
+                  ? 'linear-gradient(135deg, var(--card-bg) 0%, rgba(245, 158, 11, 0.05) 100%)'
+                  : 'var(--card-bg)',
+                border: cuttingStatusFilter === 'Colour Pending' ? '1px solid var(--warning)' : '1px solid var(--border)',
                 borderLeft: '4px solid var(--warning)',
-                borderTop: cuttingStatusFilter === 'Colour Pending' ? '2px solid var(--warning)' : '1px solid var(--border)',
-                borderRight: cuttingStatusFilter === 'Colour Pending' ? '2px solid var(--warning)' : '1px solid var(--border)',
-                borderBottom: cuttingStatusFilter === 'Colour Pending' ? '2px solid var(--warning)' : '1px solid var(--border)',
                 cursor: 'pointer',
                 position: 'relative',
                 overflow: 'hidden',
-                transition: 'all 0.2s ease',
-                transform: cuttingStatusFilter === 'Colour Pending' ? 'scale(1.01)' : 'none',
-                boxShadow: cuttingStatusFilter === 'Colour Pending' ? '0 4px 6px -1px rgba(245, 158, 11, 0.15)' : 'none'
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: cuttingStatusFilter === 'Colour Pending' ? 'translateY(-2px)' : 'none',
+                boxShadow: cuttingStatusFilter === 'Colour Pending'
+                  ? '0 10px 15px -3px rgba(245, 158, 11, 0.12), 0 4px 6px -2px rgba(245, 158, 11, 0.05)'
+                  : '0 2px 8px rgba(0,0,0,0.02)'
               }}
             >
               <div className="card-body" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)' }}>
+                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Tag size={22} />
                 </div>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Colour Pending</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Colour Pending</span>
                   <strong style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)' }}>{stats.colourPending.toLocaleString()}</strong>
                 </div>
               </div>
@@ -1889,50 +2456,110 @@ export default function JobOrder() {
               className="card metrics-card"
               onClick={() => setCuttingStatusFilter(cuttingStatusFilter === 'Cutting Done' ? 'All' : 'Cutting Done')}
               style={{
+                background: cuttingStatusFilter === 'Cutting Done'
+                  ? 'linear-gradient(135deg, var(--card-bg) 0%, rgba(16, 185, 129, 0.05) 100%)'
+                  : 'var(--card-bg)',
+                border: cuttingStatusFilter === 'Cutting Done' ? '1px solid var(--success)' : '1px solid var(--border)',
                 borderLeft: '4px solid var(--success)',
-                borderTop: cuttingStatusFilter === 'Cutting Done' ? '2px solid var(--success)' : '1px solid var(--border)',
-                borderRight: cuttingStatusFilter === 'Cutting Done' ? '2px solid var(--success)' : '1px solid var(--border)',
-                borderBottom: cuttingStatusFilter === 'Cutting Done' ? '2px solid var(--success)' : '1px solid var(--border)',
                 cursor: 'pointer',
                 position: 'relative',
                 overflow: 'hidden',
-                transition: 'all 0.2s ease',
-                transform: cuttingStatusFilter === 'Cutting Done' ? 'scale(1.01)' : 'none',
-                boxShadow: cuttingStatusFilter === 'Cutting Done' ? '0 4px 6px -1px rgba(16, 185, 129, 0.15)' : 'none'
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: cuttingStatusFilter === 'Cutting Done' ? 'translateY(-2px)' : 'none',
+                boxShadow: cuttingStatusFilter === 'Cutting Done'
+                  ? '0 10px 15px -3px rgba(16, 185, 129, 0.12), 0 4px 6px -2px rgba(16, 185, 129, 0.05)'
+                  : '0 2px 8px rgba(0,0,0,0.02)'
               }}
             >
               <div className="card-body" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)' }}>
+                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <CheckCircle size={22} />
                 </div>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cutting Done</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cutting Done</span>
                   <strong style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)' }}>{stats.cuttingDone.toLocaleString()}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Fabric Issued but not cut Card */}
+            <div
+              className="card metrics-card"
+              onClick={() => setCuttingStatusFilter(cuttingStatusFilter === 'Fabric Issued but not cut' ? 'All' : 'Fabric Issued but not cut')}
+              style={{
+                background: cuttingStatusFilter === 'Fabric Issued but not cut'
+                  ? 'linear-gradient(135deg, var(--card-bg) 0%, rgba(139, 92, 246, 0.05) 100%)'
+                  : 'var(--card-bg)',
+                border: cuttingStatusFilter === 'Fabric Issued but not cut' ? '1px solid #8b5cf6' : '1px solid var(--border)',
+                borderLeft: '4px solid #8b5cf6',
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: cuttingStatusFilter === 'Fabric Issued but not cut' ? 'translateY(-2px)' : 'none',
+                boxShadow: cuttingStatusFilter === 'Fabric Issued but not cut'
+                  ? '0 10px 15px -3px rgba(139, 92, 246, 0.12), 0 4px 6px -2px rgba(139, 92, 246, 0.05)'
+                  : '0 2px 8px rgba(0,0,0,0.02)'
+              }}
+            >
+              <div className="card-body" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ padding: 12, borderRadius: 12, backgroundColor: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileText size={22} />
+                </div>
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Issued Not Cut</span>
+                  <strong style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)' }}>{stats.fabricIssuedButNotCut.toLocaleString()}</strong>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Master List Search & Filters Panel */}
-          <div className="card">
+          <div className="card" style={{ boxShadow: '0 4px 18px rgba(0,0,0,0.03)', border: '1px solid var(--border)' }}>
             <div className="card-body" style={{ padding: '20px' }}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div className="search-bar" style={{ flex: 1, minWidth: '300px', margin: 0 }}>
+                <div className="search-bar" style={{ flex: 1, minWidth: '300px', margin: 0, position: 'relative' }}>
                   <Search size={16} className="icon" />
                   <input
                     id="job-order-search"
                     placeholder="Search by Job Order No, Lot, Fabric, Brand, Party Name, style..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    style={{ paddingLeft: '38px', height: '42px', fontSize: '14px' }}
+                    style={{ paddingLeft: '38px', paddingRight: search ? '38px' : '12px', height: '42px', fontSize: '14px', borderRadius: '8px', border: '1px solid var(--border)' }}
                   />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        opacity: 0.7,
+                        transition: 'opacity 0.15s ease'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                      onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
                 </div>
 
                 <button
                   type="button"
                   className={`btn ${showFilters ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setShowFilters(!showFilters)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, height: '42px', padding: '0 16px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, height: '42px', padding: '0 16px', borderRadius: '8px', fontWeight: 600 }}
                 >
                   <SlidersHorizontal size={15} />
                   <span>Filters</span>
@@ -1944,15 +2571,16 @@ export default function JobOrder() {
                   alignItems: 'center',
                   gap: 8,
                   margin: 0,
-                  padding: '0 12px',
+                  padding: '0 16px',
                   height: '42px',
                   backgroundColor: 'var(--bg-hover)',
-                  borderRadius: 'var(--radius-md)',
+                  borderRadius: '8px',
                   border: '1px solid var(--border)',
                   cursor: 'pointer',
                   fontSize: 14,
                   fontWeight: 600,
-                  userSelect: 'none'
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease'
                 }}>
                   <input
                     type="checkbox"
@@ -1963,8 +2591,12 @@ export default function JobOrder() {
                   <span>Show Only Un-cut Lots</span>
                 </label>
 
-                <button className="btn btn-secondary" onClick={handleExport} style={{ display: 'flex', alignItems: 'center', gap: 8, height: '42px' }}>
+                <button className="btn btn-secondary" onClick={handleExport} style={{ display: 'flex', alignItems: 'center', gap: 8, height: '42px', borderRadius: '8px', fontWeight: 600 }}>
                   <Download size={15} /> Export CSV
+                </button>
+
+                <button className="btn btn-secondary" onClick={exportMasterToPdf} style={{ display: 'flex', alignItems: 'center', gap: 8, height: '42px', borderRadius: '8px', fontWeight: 600 }}>
+                  <FileText size={15} /> Export PDF
                 </button>
 
                 {(selectedBrand !== 'All' || selectedStatus !== 'All' || selectedSeason !== 'All' || selectedFabric !== 'All' || selectedParty !== 'All' || selectedGarment !== 'All' || selectedSection !== 'All' || selectedSubmittedBy !== 'All' || search || !onlyUncut || cuttingStatusFilter !== 'All') && (
@@ -2072,27 +2704,29 @@ export default function JobOrder() {
             <div className="table-wrap" style={{ border: 'none', overflowX: 'auto', margin: 0 }}>
               <table className="premium-table">
                 <thead>
-                  <tr style={{ backgroundColor: 'var(--bg-hover)' }}>
-                    <th style={{ width: '70px', textAlign: 'center' }}>Details</th>
-                    <th>Job Order No</th>
-                    <th>Date</th>
-                    <th>Lot Number</th>
-                    <th>Fabric Quality</th>
-                    <th>Brand</th>
-                    <th>Shades</th>
-                    <th>Sizes</th>
-                    <th style={{ textAlign: 'right' }}>Stitch Qty</th>
-                    <th>Unit</th>
-                    <th>Party Name</th>
-                    <th>Garment</th>
-                    <th>Cutting Status</th>
-                    <th>Status</th>
+                  <tr style={{ backgroundColor: 'var(--bg-hover)', borderBottom: '2px solid var(--border)' }}>
+                    <th style={{ width: '70px', textAlign: 'center', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Details</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Job Order No</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Date</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Lot Number</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Fabric Quality</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Brand</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Shades</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Sizes</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Unit</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Party Name</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Garment</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Priority</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Fabric Issued Date</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Cutting Date</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Cutting Status</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={14} style={{ textAlign: 'center', padding: '60px 0' }}>
+                      <td colSpan={16} style={{ textAlign: 'center', padding: '60px 0' }}>
                         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
                           <RefreshCw size={24} className="spin-animation" style={{ color: 'var(--primary)' }} />
                           <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Syncing and parsing live Google Sheets database...</span>
@@ -2101,7 +2735,7 @@ export default function JobOrder() {
                     </tr>
                   ) : paginated.length === 0 ? (
                     <tr>
-                      <td colSpan={14}>
+                      <td colSpan={16}>
                         <div className="empty-state" style={{ padding: '60px 20px' }}>
                           <div className="empty-state-icon" style={{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }}><Layers size={32} /></div>
                           <h3 style={{ margin: '12px 0 6px 0', fontSize: 16, fontWeight: 700 }}>No matching Job Orders found</h3>
@@ -2145,14 +2779,72 @@ export default function JobOrder() {
                           {jo['Date'] || '—'}
                         </span>
                       </td>
-                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{jo['Lot Number'] || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {(() => {
+                          const lotNum = String(jo['Lot Number'] || '').trim();
+                          if (!lotNum) return '—';
+
+                          const priorityVal = String(jo['Priority'] || '').trim().toLowerCase();
+                          let textColor = 'var(--text-primary)';
+                          let bgColor = 'transparent';
+                          let borderColor = 'transparent';
+                          let hasHighlight = false;
+
+                          if (priorityVal === 'high') {
+                            textColor = '#ffffff';
+                            bgColor = '#f43f5e'; // Solid pinkish red
+                            borderColor = '#e11d48';
+                            hasHighlight = true;
+                          } else if (priorityVal === 'medium') {
+                            textColor = '#000000';
+                            bgColor = '#eab308'; // Solid yellow
+                            borderColor = '#ca8a04';
+                            hasHighlight = true;
+                          } else if (priorityVal === 'low') {
+                            textColor = '#ffffff';
+                            bgColor = '#ef4444'; // Solid red
+                            borderColor = '#dc2626';
+                            hasHighlight = true;
+                          }
+
+                          const isRepeated = lotCounts.get(lotNum) > 1;
+
+                          return (
+                            <span
+                              style={{
+                                color: textColor,
+                                backgroundColor: bgColor,
+                                border: hasHighlight ? `1px solid ${borderColor}` : 'none',
+                                padding: hasHighlight ? '6px 10px' : '0',
+                                borderRadius: hasHighlight ? '6px' : '0',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                fontWeight: 700,
+                                fontSize: hasHighlight ? '11px' : 'inherit',
+                                boxShadow: hasHighlight ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
+                              }}
+                            >
+                              {lotNum}
+                              {isRepeated && (
+                                <Star
+                                  size={12}
+                                  fill={priorityVal === 'medium' ? '#000000' : '#ffffff'}
+                                  stroke={priorityVal === 'medium' ? '#000000' : '#ffffff'}
+                                  title="Repeated lot (Urgent)"
+                                  style={{ animation: 'pulse 1.5s infinite' }}
+                                />
+                              )}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td style={{ fontWeight: 600, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={jo['Fabric']}>
                         {jo['Fabric'] || '—'}
                       </td>
                       <td>{jo['Brand'] || '—'}</td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={jo['Shade']}>{jo['Shade'] || '—'}</td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{jo['Size'] || '—'}</td>
-                      <td style={{ fontWeight: 700, textAlign: 'right', color: 'var(--text-primary)' }}>{Number(jo['Quantity'] || 0).toLocaleString()}</td>
                       <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{jo['Unit'] || '—'}</td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{jo['Party Name'] || '—'}</td>
                       <td>
@@ -2161,19 +2853,64 @@ export default function JobOrder() {
                         </span>
                       </td>
                       <td>
+                        {jo['Priority'] ? (
+                          <span className={`badge ${String(jo['Priority']).toLowerCase() === 'high' ? 'badge-danger' :
+                            String(jo['Priority']).toLowerCase() === 'medium' ? 'badge-warning' :
+                              String(jo['Priority']).toLowerCase() === 'low' ? 'badge-success' :
+                                'badge-secondary'
+                            }`} style={{ fontSize: 10, fontWeight: 700 }}>
+                            {jo['Priority']}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <Calendar size={12} style={{ opacity: 0.6 }} />
+                          {formatToYYYYMMDD(jo['fabricIssuedDate'])}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <Calendar size={12} style={{ opacity: 0.6 }} />
+                          {(() => {
+                            const lotNum = String(jo['Lot Number'] || '').trim();
+                            const cutInfo = cuttingMapByLot.get(lotNum);
+                            return cutInfo ? formatToYYYYMMDD(cutInfo['Cutting Date']) : '—';
+                          })()}
+                        </span>
+                      </td>
+                      <td>
                         {(() => {
                           const lotNum = String(jo['Lot Number'] || '').trim();
-                          const cutInfo = cuttingMapByLot.get(lotNum);
-                          if (!cutInfo) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                          const statusText = getCuttingStatusText(lotNum);
+
+                          if (statusText === 'Fabric Issued but not cut') {
+                            return (
+                              <span className="badge" style={{ fontSize: 10, fontWeight: 700, backgroundColor: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+                                Fabric Issued but not cut
+                              </span>
+                            );
+                          }
 
                           let badgeClass = 'badge-secondary';
-                          if (cutInfo.Remarks.includes('Cutting Done')) badgeClass = 'badge-success';
-                          else if (cutInfo.Remarks.includes('Colour Pending')) badgeClass = 'badge-warning';
-                          else if (cutInfo.Remarks.includes('Fabric Issue Pending')) badgeClass = 'badge-danger';
+                          let displayText = statusText;
+                          if (statusText === 'Cutting Done') {
+                            badgeClass = 'badge-success';
+                          } else if (statusText === 'Colour Pending') {
+                            badgeClass = 'badge-warning';
+                            const pendingShades = pendingListByLot[lotNum] || [];
+                            if (pendingShades.length > 0) {
+                              displayText = `Colour Pending (${pendingShades.join(', ')})`;
+                            }
+                          } else if (statusText === 'Fabric Issue Pending') {
+                            badgeClass = 'badge-danger';
+                          }
 
                           return (
-                            <span className={`badge ${badgeClass}`} style={{ fontSize: 10, fontWeight: 700 }}>
-                              {cutInfo.Remarks || '—'}
+                            <span className={`badge ${badgeClass}`} style={{ fontSize: 10, fontWeight: 700 }} title={statusText === 'Colour Pending' ? `Pending shades: ${(pendingListByLot[lotNum] || []).join(', ')}` : undefined}>
+                              {displayText}
                             </span>
                           );
                         })()}
@@ -2254,6 +2991,9 @@ export default function JobOrder() {
               <div style={{ display: 'flex', gap: 12 }}>
                 <button className="btn btn-secondary" onClick={handleExportExcel} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Download size={14} /> Export Excel
+                </button>
+                <button className="btn btn-secondary" onClick={exportCuttingToPdf} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FileText size={14} /> Export PDF
                 </button>
                 <button className="btn btn-primary" onClick={() => loadCuttingData("refresh")} disabled={cuttingLoading} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <RefreshCw size={14} className={cuttingLoading ? 'spin-animation' : ''} /> Sync Report
@@ -2446,21 +3186,21 @@ export default function JobOrder() {
             <div className="table-wrap" style={{ border: 'none', overflowX: 'auto', margin: 0, backgroundColor: '#ffffff' }}>
               <table className="premium-table" style={{ backgroundColor: '#ffffff' }}>
                 <thead>
-                  <tr style={{ backgroundColor: 'var(--bg-hover)' }}>
-                    <th style={{ width: '70px', textAlign: 'center' }}>Details</th>
-                    <th>Lot Number</th>
-                    <th>Job Order No</th>
-                    <th>Remarks / Action</th>
-                    <th>Pending Shades</th>
-                    <th>Fabric Quality</th>
-                    <th>Brand</th>
-                    <th>Garment</th>
-                    <th>Party Name</th>
-                    <th>PO Date</th>
-                    <th>Days elapsed</th>
-                    <th style={{ textAlign: 'right' }}>Total PCS Cut</th>
-                    <th>Cutting Table</th>
-                    <th>Cutting Date</th>
+                  <tr style={{ backgroundColor: 'var(--bg-hover)', borderBottom: '2px solid var(--border)' }}>
+                    <th style={{ width: '70px', textAlign: 'center', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Details</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Lot Number</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Job Order No</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Remarks / Action</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Pending Shades</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Fabric Quality</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Brand</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Garment</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Party Name</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>PO Date</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Days elapsed</th>
+                    <th style={{ textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Total PCS Cut</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Cutting Table</th>
+                    <th style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', padding: '14px 16px' }}>Cutting Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2489,7 +3229,7 @@ export default function JobOrder() {
 
                     return (
                       <tr key={`${lot}-${idx}`} className="hover-row" style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ textAlign: 'center' }}>
+                        <td style={{ textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                           <button
                             className="btn btn-ghost btn-icon btn-sm"
                             onClick={() => {
@@ -2505,6 +3245,26 @@ export default function JobOrder() {
                             style={{ color: 'var(--primary)' }}
                           >
                             <Eye size={14} />
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-icon btn-sm"
+                            onClick={() => {
+                              const fullJob = jobOrders.find(jo => {
+                                const joNoMatch = String(jo['Job Order No'] || '').trim().toLowerCase() === String(r['Job Order No'] || '').trim().toLowerCase();
+                                const lotMatch = String(jo['Lot Number'] || '').trim().toLowerCase() === String(r['Lot No'] || '').trim().toLowerCase();
+                                return joNoMatch || (lotMatch && lot);
+                              });
+                              exportSingleJobOrderPdf(fullJob || r);
+                            }}
+                            disabled={pdfBusyId === r['Job Order No']}
+                            title="Download PDF"
+                            style={{ color: 'var(--primary)' }}
+                          >
+                            {pdfBusyId === r['Job Order No'] ? (
+                              <RefreshCw size={14} className="spin-animation" />
+                            ) : (
+                              <Download size={14} />
+                            )}
                           </button>
                         </td>
                         <td style={{ fontWeight: 800, color: 'var(--text-primary)' }}>

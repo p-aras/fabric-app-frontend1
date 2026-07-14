@@ -111,16 +111,46 @@ const FabricIssued = () => {
   const [allTables, setAllTables] = useState([]);
 
   const displayedTables = useMemo(() => {
-    if (allTables.length === 0) return [];
-    if (loggedInUser?.role === 'Admin') {
-      return allTables;
+    let list = allTables.length > 0 ? [...allTables] : [];
+
+    // Ensure we have at least Table 1 to Table 20 in the displayed tables list
+    for (let i = 1; i <= 20; i++) {
+      const tableName = `Table ${i}`;
+      const exists = list.some(tbl => tbl.name === tableName);
+      if (!exists) {
+        list.push({
+          id: `temp-${i}`,
+          name: tableName,
+          supervisorId: null,
+          cutterMasterId: null,
+          Supervisor: null
+        });
+      }
     }
-    const supervisorTables = allTables.filter(tbl => tbl.supervisorId === loggedInUser?.id);
+
+    // Sort numerically: Table 1, Table 2, ... Table 10 ... Table 20
+    list.sort((a, b) => {
+      const numA = parseInt(a.name.replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(b.name.replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
+    });
+
+    if (loggedInUser?.role === 'Admin') {
+      return list;
+    }
+    const supervisorTables = list.filter(tbl => tbl.supervisorId === loggedInUser?.id);
     if (supervisorTables.length > 0) {
       return supervisorTables;
     }
-    return allTables;
+    return list;
   }, [allTables, loggedInUser]);
+
+  // Synchronize defaultTable when displayedTables resolves/changes
+  useEffect(() => {
+    if (displayedTables.length > 0) {
+      setDefaultTable(displayedTables[0].name);
+    }
+  }, [displayedTables]);
 
   // Kharcha (accessories/expense) issuance
   const [kharchaItems, setKharchaItems] = useState([{ id: Date.now(), item: '', weight: '' }]);
@@ -359,10 +389,47 @@ const FabricIssued = () => {
         // Reset pagination when loading new lot
         setHistoryPage(1);
         setHasMoreHistory(true);
-        loadIssueHistoryPaginated(found['Lot Number'], 1, true);
-
-        // Open the matching check modal immediately after lot is found
-        setTimeout(() => setMatchingModal({ step: 'ask_matching' }), 400);
+        
+        // Load history and look for prior matching status in database
+        const historyList = await loadIssueHistoryPaginated(found['Lot Number'], 1, true);
+        
+        let prevMatchingStatus = null;
+        let prevMatchingPassedBy = '';
+        
+        if (historyList && historyList.length > 0) {
+          const matchedRecord = historyList.find(rec => rec.matchingStatus);
+          if (matchedRecord) {
+            prevMatchingStatus = matchedRecord.matchingStatus;
+            prevMatchingPassedBy = matchedRecord.matchingPassedBy;
+          }
+        }
+        
+        // If not in database, check localStorage
+        if (!prevMatchingStatus) {
+          const localMatch = localStorage.getItem(`lot_matching_${found['Lot Number']}`);
+          if (localMatch) {
+            try {
+              const parsed = JSON.parse(localMatch);
+              if (parsed && parsed.status) {
+                prevMatchingStatus = parsed.status;
+                prevMatchingPassedBy = parsed.passedBy || '';
+              }
+            } catch (err) {
+              console.error('Failed to parse local matching status:', err);
+            }
+          }
+        }
+        
+        if (prevMatchingStatus) {
+          console.log(`✨ Restoring prior matching status for lot ${found['Lot Number']}: ${prevMatchingStatus} (Approved by: ${prevMatchingPassedBy})`);
+          setLotMatchingStatus(prevMatchingStatus);
+          setMatchingPassedBy(prevMatchingPassedBy || '');
+          setLotScanningAllowed(prevMatchingStatus === 'passed' || prevMatchingStatus === 'no_matching');
+          setMatchingModal(null);
+        } else {
+          // No prior matching status found, prompt for matching
+          setTimeout(() => setMatchingModal({ step: 'ask_matching' }), 400);
+        }
 
         // Fetch prior approvals for this lot from database
         try {
@@ -694,6 +761,14 @@ const FabricIssued = () => {
       setLotScanningAllowed(true);
       setLotMatchingStatus('no_matching');
       setMatchingPassedBy('');
+      
+      if (selectedJob) {
+        localStorage.setItem(`lot_matching_${selectedJob['Lot Number']}`, JSON.stringify({
+          status: 'no_matching',
+          passedBy: ''
+        }));
+      }
+
       setMatchingModal(null);
       setTimeout(() => barcodeInputRef.current?.focus(), 100);
     } else {
@@ -712,6 +787,14 @@ const FabricIssued = () => {
       setLotScanningAllowed(false);
       setLotMatchingStatus('failed');
       setMatchingPassedBy('');
+      
+      if (selectedJob) {
+        localStorage.setItem(`lot_matching_${selectedJob['Lot Number']}`, JSON.stringify({
+          status: 'failed',
+          passedBy: ''
+        }));
+      }
+
       setMatchingModal(null);
       alert('⛔ Matching Failed! Barcode scanning is not allowed for this lot.');
     }
@@ -726,6 +809,14 @@ const FabricIssued = () => {
     setMatchingPassedBy(cleanName);
     setLotScanningAllowed(true);
     setLotMatchingStatus('passed');
+    
+    if (selectedJob) {
+      localStorage.setItem(`lot_matching_${selectedJob['Lot Number']}`, JSON.stringify({
+        status: 'passed',
+        passedBy: cleanName
+      }));
+    }
+
     setMatchingModal(null);
     setTimeout(() => barcodeInputRef.current?.focus(), 100);
   };
@@ -1622,6 +1713,7 @@ const FabricIssued = () => {
       setFabricApprovals({});
       setDefaultApproverName('');
       setMatchingPassedBy('');
+      setShadeTableNumbers({});
       setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
 
       // Reset pagination and reload history
@@ -2303,7 +2395,7 @@ const FabricIssued = () => {
                       <option key={tbl.id} value={tbl.name} style={{ background: '#1e293b', color: 'white' }}>{tbl.name}</option>
                     ))
                   ) : (
-                    Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => (
+                    Array.from({ length: 20 }, (_, i) => `Table ${i + 1}`).map(t => (
                       <option key={t} value={t} style={{ background: '#1e293b', color: 'white' }}>{t}</option>
                     ))
                   )}
@@ -2458,15 +2550,29 @@ const FabricIssued = () => {
                           <div style={{
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '6px',
+                            gap: '8px',
                             marginTop: '10px',
-                            padding: '8px 12px',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(255, 255, 255, 0.08)'
+                            padding: '12px 14px',
+                            background: '#f8fafc',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0'
                           }}>
-                            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Assign Table for this shade:</span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                            <span style={{ fontSize: '11px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              Assign Table for this shade:
+                            </span>
+                            <div 
+                              className="scrollbar-hidden"
+                              style={{ 
+                                display: 'flex', 
+                                flexWrap: 'nowrap', 
+                                gap: '6px', 
+                                marginTop: '4px',
+                                overflowX: 'auto',
+                                paddingBottom: '6px',
+                                scrollbarWidth: 'none',
+                                msOverflowStyle: 'none'
+                              }}
+                            >
                               {displayedTables.length > 0 ? (
                                 displayedTables.map(tbl => {
                                   const t = tbl.name;
@@ -2484,21 +2590,23 @@ const FabricIssued = () => {
                                         }));
                                       }}
                                       style={{
-                                        padding: '4px 10px',
-                                        background: isTableSelected ? 'linear-gradient(135deg, #0ca678, #059669)' : 'rgba(255,255,255,0.06)',
-                                        color: isTableSelected ? 'white' : '#cbd5e1',
-                                        border: isTableSelected ? 'none' : '1px solid rgba(255,255,255,0.15)',
-                                        borderRadius: '6px',
+                                        padding: '5px 12px',
+                                        background: isTableSelected ? 'linear-gradient(135deg, #10b981, #059669)' : '#ffffff',
+                                        color: isTableSelected ? 'white' : '#475569',
+                                        border: isTableSelected ? 'none' : '1px solid #cbd5e1',
+                                        borderRadius: '8px',
                                         fontSize: '11px',
                                         fontWeight: '700',
                                         cursor: 'pointer',
-                                        boxShadow: isTableSelected ? '0 2px 6px rgba(12,166,120,0.3)' : 'none',
-                                        transition: 'all 0.15s'
+                                        boxShadow: isTableSelected ? '0 2px 6px rgba(16,185,129,0.3)' : '0 1px 2px rgba(0,0,0,0.02)',
+                                        transition: 'all 0.15s',
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0
                                       }}
                                     >
                                       {t.replace('Table ', 'T')}
                                       {tbl.Supervisor && loggedInUser?.role === 'Admin' && (
-                                        <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '4px', fontWeight: '500' }}>
+                                        <span style={{ fontSize: '9px', opacity: 0.8, marginLeft: '4px', fontWeight: '500' }}>
                                           ({(tbl.Supervisor.name || '').split(' ')[0]})
                                         </span>
                                       )}
@@ -2506,7 +2614,7 @@ const FabricIssued = () => {
                                   );
                                 })
                               ) : (
-                                Array.from({ length: 12 }, (_, i) => `Table ${i + 1}`).map(t => {
+                                Array.from({ length: 20 }, (_, i) => `Table ${i + 1}`).map(t => {
                                   const isTableSelected = shadeTableNumbers[shadeId] === t;
                                   return (
                                     <button
@@ -2519,16 +2627,18 @@ const FabricIssued = () => {
                                         }));
                                       }}
                                       style={{
-                                        padding: '4px 10px',
-                                        background: isTableSelected ? 'linear-gradient(135deg, #0ca678, #059669)' : 'rgba(255,255,255,0.06)',
-                                        color: isTableSelected ? 'white' : '#cbd5e1',
-                                        border: isTableSelected ? 'none' : '1px solid rgba(255,255,255,0.15)',
-                                        borderRadius: '6px',
+                                        padding: '5px 12px',
+                                        background: isTableSelected ? 'linear-gradient(135deg, #10b981, #059669)' : '#ffffff',
+                                        color: isTableSelected ? 'white' : '#475569',
+                                        border: isTableSelected ? 'none' : '1px solid #cbd5e1',
+                                        borderRadius: '8px',
                                         fontSize: '11px',
                                         fontWeight: '700',
                                         cursor: 'pointer',
-                                        boxShadow: isTableSelected ? '0 2px 6px rgba(12,166,120,0.3)' : 'none',
-                                        transition: 'all 0.15s'
+                                        boxShadow: isTableSelected ? '0 2px 6px rgba(16,185,129,0.3)' : '0 1px 2px rgba(0,0,0,0.02)',
+                                        transition: 'all 0.15s',
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0
                                       }}
                                     >
                                       {t.replace('Table ', 'T')}
@@ -2904,11 +3014,84 @@ const FabricIssued = () => {
           )}
         </div>
       ) : (
-        <div className="empty-state">
-          <div className="empty-state-content">
-            <div className="empty-icon">🔍</div>
-            <h3>No Lot Selected</h3>
-            <p>Enter a valid Lot Number above to view job details and issue fabric</p>
+        <div className="empty-state" style={{ background: '#f8fafc', minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="empty-state-card-premium" style={{
+            background: 'linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%)',
+            border: '1px solid #e2e8f0',
+            borderRadius: '24px',
+            padding: '50px 30px',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.05), 0 10px 10px -5px rgba(0,0,0,0.02)',
+            textAlign: 'center',
+            maxWidth: '600px',
+            width: '100%',
+            margin: '40px auto',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '20px'
+          }}>
+            <div style={{
+              fontSize: '54px',
+              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              marginBottom: '10px',
+              lineHeight: 1
+            }}>⚡</div>
+            <h3 style={{ fontSize: '24px', fontWeight: '800', margin: 0, color: '#0f172a' }}>Fabric Issuance Dashboard</h3>
+            <p style={{ color: '#64748b', fontSize: '14.5px', margin: '0 0 10px 0', lineHeight: '1.6', maxWidth: '480px' }}>
+              Search for a Lot Number to display production details, perform shade matching verification, scan roll barcodes, and issue fabric to active cutting tables.
+            </p>
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              width: '100%',
+              maxWidth: '480px',
+              marginTop: '10px',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', color: '#64748b' }}>🔍</span>
+                <input
+                  type="text"
+                  placeholder="Enter Lot Number (e.g., 11456)"
+                  value={searchLot}
+                  onChange={(e) => setSearchLot(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px 14px 44px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    outline: 'none',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                    transition: 'all 0.2s'
+                  }}
+                />
+              </div>
+              <button
+                onClick={handleSearch}
+                style={{
+                  background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '14px 28px',
+                  borderRadius: '12px',
+                  fontWeight: '700',
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 6px rgba(30, 60, 114, 0.15)',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Search Lot
+              </button>
+            </div>
           </div>
         </div>
       )}

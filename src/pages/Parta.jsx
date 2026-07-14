@@ -967,48 +967,6 @@ export default function Parta() {
       };
       setMeta(baseMeta);
 
-      // Fetch issued rolls from Node/MySQL backend
-      let fetchedIssuedWeightByShade = {};
-      let fetchedIssuedRollsByShade = {};
-      let fetchedReturnedWeightByShade = {};
-      let totalIssuedWeight = 0;
-      let totalIssuedRolls = 0;
-      let totalReturnedWeightVal = 0;
-
-      try {
-        const issuedRollsURL = `${BACKEND_URL}/api/fabric-receiving/issued-rolls/${encodeURIComponent(lotVal)}`;
-        const issuedRes = await fetch(issuedRollsURL);
-        if (issuedRes.ok) {
-          const issuedJson = await issuedRes.json();
-          if (issuedJson.success && Array.isArray(issuedJson.data)) {
-            const rollsData = issuedJson.data;
-            rollsData.forEach(roll => {
-              const shadeKey = String(roll.shade || "").trim().toLowerCase();
-              const w = parseFloat(roll.originalIssuedWeight !== undefined ? roll.originalIssuedWeight : roll.weight || 0);
-              const retW = parseFloat(roll.totalReturnedWeight || 0);
-
-              fetchedIssuedWeightByShade[shadeKey] = (fetchedIssuedWeightByShade[shadeKey] || 0) + w;
-              fetchedIssuedRollsByShade[shadeKey] = (fetchedIssuedRollsByShade[shadeKey] || 0) + 1;
-              fetchedReturnedWeightByShade[shadeKey] = (fetchedReturnedWeightByShade[shadeKey] || 0) + retW;
-
-              totalIssuedWeight += w;
-              totalIssuedRolls += 1;
-              totalReturnedWeightVal += retW;
-            });
-            console.log("Fetched issued rolls from DB:", rollsData);
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to fetch issued rolls from backend API:", err);
-      }
-
-      setDbIssuedWeightByShade(fetchedIssuedWeightByShade);
-      setDbIssuedRollsByShade(fetchedIssuedRollsByShade);
-      setDbReturnedWeightByShade(fetchedReturnedWeightByShade);
-      setDbTotalIssuedWeight(totalIssuedWeight);
-      setDbTotalIssuedRolls(totalIssuedRolls);
-      setDbTotalReturnedWeight(totalReturnedWeightVal);
-
       // 6) Try to hydrate last saved and UNION axes (sheet ⊔ saved) so manual shades persist
       let finalShades = parsedShades.slice();
       let finalSizes = parsedSizes.slice();
@@ -1103,6 +1061,71 @@ export default function Parta() {
         console.warn("Processing saved matrix failed:", e);
       }
 
+      // Fetch issued rolls from Node/MySQL backend after finalShades has been initialized
+      let fetchedIssuedWeightByShade = {};
+      let fetchedIssuedRollsByShade = {};
+      let fetchedReturnedWeightByShade = {};
+      let totalIssuedWeight = 0;
+      let totalIssuedRolls = 0;
+      let totalReturnedWeightVal = 0;
+
+      try {
+        const issuedRollsURL = `${BACKEND_URL}/api/fabric-receiving/issued-rolls/${encodeURIComponent(lotVal)}`;
+        const issuedRes = await fetch(issuedRollsURL);
+        if (issuedRes.ok) {
+          const issuedJson = await issuedRes.json();
+          if (issuedJson.success && Array.isArray(issuedJson.data)) {
+            const rollsData = issuedJson.data;
+            rollsData.forEach(roll => {
+              const w = parseFloat(roll.originalIssuedWeight !== undefined ? roll.originalIssuedWeight : roll.weight || 0);
+              const retW = parseFloat(roll.totalReturnedWeight || 0);
+
+              // Match shade mapping dynamically by original entry index if duplicate names exist
+              let targetShadeName = "";
+              
+              if (roll.shadeId) {
+                const parts = roll.shadeId.split('_');
+                const originalIndex = parseInt(parts[parts.length - 1]);
+                if (!isNaN(originalIndex) && originalIndex >= 0 && originalIndex < finalShades.length) {
+                  targetShadeName = finalShades[originalIndex];
+                }
+              }
+              
+              if (!targetShadeName && roll.shadeEntry) {
+                const originalIndex = roll.shadeEntry - 1;
+                if (originalIndex >= 0 && originalIndex < finalShades.length) {
+                  targetShadeName = finalShades[originalIndex];
+                }
+              }
+              
+              if (!targetShadeName) {
+                targetShadeName = roll.shade || "";
+              }
+
+              const shadeKey = String(targetShadeName || "").trim().toLowerCase();
+
+              fetchedIssuedWeightByShade[shadeKey] = (fetchedIssuedWeightByShade[shadeKey] || 0) + w;
+              fetchedIssuedRollsByShade[shadeKey] = (fetchedIssuedRollsByShade[shadeKey] || 0) + 1;
+              fetchedReturnedWeightByShade[shadeKey] = (fetchedReturnedWeightByShade[shadeKey] || 0) + retW;
+
+              totalIssuedWeight += w;
+              totalIssuedRolls += 1;
+              totalReturnedWeightVal += retW;
+            });
+            console.log("Fetched issued rolls from DB:", rollsData);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch issued rolls from backend API:", err);
+      }
+
+      setDbIssuedWeightByShade(fetchedIssuedWeightByShade);
+      setDbIssuedRollsByShade(fetchedIssuedRollsByShade);
+      setDbReturnedWeightByShade(fetchedReturnedWeightByShade);
+      setDbTotalIssuedWeight(totalIssuedWeight);
+      setDbTotalIssuedRolls(totalIssuedRolls);
+      setDbTotalReturnedWeight(totalReturnedWeightVal);
+
       // 7) Initialize state using FINAL axes (union), prefilling with saved values where available
       const initCut = {};
       const initCells = {};
@@ -1130,14 +1153,14 @@ export default function Parta() {
 
         initCut[sh] = String(prefillCutting[sh] ?? "");
         initRolls[sh] = String(
-          prefillRolls[sh] !== undefined && prefillRolls[sh] !== "" && prefillRolls[sh] !== "0"
-            ? prefillRolls[sh]
-            : (dbRolls !== undefined ? dbRolls : "")
+          dbRolls !== undefined && dbRolls > 0
+            ? dbRolls
+            : (prefillRolls[sh] !== undefined && prefillRolls[sh] !== "" ? prefillRolls[sh] : "")
         );
         initKgs[sh] = String(
-          prefillKgs[sh] !== undefined && prefillKgs[sh] !== "" && prefillKgs[sh] !== "0" && parseFloat(prefillKgs[sh]) > 0
-            ? prefillKgs[sh]
-            : (dbWeight !== undefined ? dbWeight.toFixed(3) : "")
+          dbWeight !== undefined && dbWeight > 0
+            ? dbWeight.toFixed(3)
+            : (prefillKgs[sh] !== undefined && prefillKgs[sh] !== "" ? prefillKgs[sh] : "")
         );
         initKapdaLayerWT[sh] = String(prefillKapdaLayerWT[sh] ?? "");
         initLayerPcs[sh] = String(prefillLayerPcs[sh] ?? "");
@@ -1145,9 +1168,9 @@ export default function Parta() {
         initDia[sh] = String(prefillDia[sh] ?? "");
         initCuttingWeight[sh] = String(prefillCuttingWeight[sh] ?? "");
         initKapdaWapsi[sh] = String(
-          prefillKapdaWapsi[sh] !== undefined && prefillKapdaWapsi[sh] !== "" && prefillKapdaWapsi[sh] !== "0"
-            ? prefillKapdaWapsi[sh]
-            : (dbReturned !== undefined && dbReturned > 0 ? dbReturned.toFixed(3) : "")
+          dbReturned !== undefined && dbReturned > 0
+            ? dbReturned.toFixed(3)
+            : (prefillKapdaWapsi[sh] !== undefined && prefillKapdaWapsi[sh] !== "" ? prefillKapdaWapsi[sh] : "")
         );
 
         // Calculate proposed weight per pcs on initialization

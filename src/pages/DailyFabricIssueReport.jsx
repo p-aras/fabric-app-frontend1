@@ -750,17 +750,70 @@ export default function DailyFabricIssueReport() {
             <span style={{ fontSize: '11px', color: '#2563eb', fontWeight: 800 }}>Daily Performance Curve</span>
           </div>
           <div className="card-body" style={{ padding: '24px 20px 10px 10px' }}>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={trendChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" vertical={false} />
-                <XAxis dataKey="formattedDate" tick={{ fontSize: 10, fill: '#0f172a', fontWeight: 700 }} />
-                <YAxis yAxisId="left" label={{ value: 'Rolls', angle: -90, position: 'insideLeft', offset: -5, fill: '#0f172a', fontSize: 10, fontWeight: 800 }} tick={{ fontSize: 10, fill: '#0f172a', fontWeight: 700 }} />
-                <YAxis yAxisId="right" orientation="right" label={{ value: 'Weight (KG)', angle: 90, position: 'insideRight', offset: -5, fill: '#0f172a', fontSize: 10, fontWeight: 800 }} tick={{ fontSize: 10, fill: '#0f172a', fontWeight: 700 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '11px', fontWeight: 750, color: '#0f172a' }} />
-                <Line yAxisId="left" type="monotone" dataKey="rolls" name="Rolls Issued" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, stroke: '#2563eb', strokeWidth: 1 }} activeDot={{ r: 6 }} />
-                <Line yAxisId="right" type="monotone" dataKey="weight" name="Weight (KG)" stroke="#10b981" strokeWidth={3} dot={{ r: 4, stroke: '#10b981', strokeWidth: 1 }} activeDot={{ r: 6 }} />
-              </LineChart>
+             <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={trendChartData}>
+                <defs>
+                  <linearGradient id="weightTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.24}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
+                  </linearGradient>
+                  <linearGradient id="rollsTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.08}/>
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis 
+                  dataKey="formattedDate" 
+                  tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
+                  axisLine={{ stroke: '#cbd5e1' }}
+                  tickLine={{ stroke: '#cbd5e1' }}
+                />
+                <YAxis 
+                  yAxisId="left" 
+                  tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
+                  axisLine={false}
+                  tickLine={false}
+                  label={{ value: 'Rolls Issued', angle: -90, position: 'insideLeft', offset: 0, fill: '#2563eb', fontSize: 11, fontWeight: 700 }} 
+                />
+                <YAxis 
+                  yAxisId="right" 
+                  orientation="right" 
+                  tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
+                  axisLine={false}
+                  tickLine={false}
+                  label={{ value: 'Weight (KG)', angle: 90, position: 'insideRight', offset: 0, fill: '#10b981', fontSize: 11, fontWeight: 700 }} 
+                />
+                <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(37, 99, 235, 0.08)', strokeWidth: 2 }} />
+                <Legend 
+                  verticalAlign="top" 
+                  height={40} 
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', paddingBottom: '10px' }} 
+                />
+                <Area 
+                  yAxisId="right" 
+                  type="monotone" 
+                  dataKey="weight" 
+                  name="Weight (KG)" 
+                  fill="url(#weightTrendGrad)" 
+                  stroke="#10b981" 
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#10b981', strokeWidth: 0 }} 
+                  activeDot={{ r: 5, stroke: '#10b981', strokeWidth: 1.5, fill: '#ffffff' }} 
+                />
+                <Line 
+                  yAxisId="left" 
+                  type="monotone" 
+                  dataKey="rolls" 
+                  name="Rolls Issued" 
+                  stroke="#2563eb" 
+                  strokeWidth={3} 
+                  dot={{ r: 4, stroke: '#2563eb', strokeWidth: 2, fill: '#ffffff' }} 
+                  activeDot={{ r: 6, stroke: '#2563eb', strokeWidth: 2.5, fill: '#ffffff' }} 
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -899,18 +952,49 @@ export default function DailyFabricIssueReport() {
             <div className="card-body" style={{ padding: '20px 10px 10px 10px' }}>
               <ResponsiveContainer width="100%" height={230}>
                 <ComposedChart data={tableChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#0f172a', fontWeight: 700 }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#0f172a', fontWeight: 700 }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#0f172a', fontWeight: 700 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    tickLine={{ stroke: '#cbd5e1' }}
+                  />
+                  <YAxis 
+                    yAxisId="left" 
+                    tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis 
+                    yAxisId="right" 
+                    orientation="right" 
+                    tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(37, 99, 235, 0.02)' }} />
-                  <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '11px', fontWeight: 750 }} />
-                  <Bar yAxisId="left" dataKey="rolls" name="Rolls Issued" radius={[4, 4, 0, 0]} maxBarSize={28}>
+                  <Legend 
+                    verticalAlign="top" 
+                    height={36} 
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: '11px', fontWeight: 700, color: '#1e293b' }} 
+                  />
+                  <Bar yAxisId="left" dataKey="rolls" name="Rolls Issued" radius={[6, 6, 0, 0]} maxBarSize={28}>
                     {tableChartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Bar>
-                  <Line yAxisId="right" type="monotone" dataKey="weight" name="Weight (KG)" stroke="#e11d48" strokeWidth={3} activeDot={{ r: 6 }} />
+                  <Line 
+                    yAxisId="right" 
+                    type="monotone" 
+                    dataKey="weight" 
+                    name="Weight (KG)" 
+                    stroke="#e11d48" 
+                    strokeWidth={3} 
+                    dot={{ r: 4, stroke: '#e11d48', strokeWidth: 2, fill: '#ffffff' }}
+                    activeDot={{ r: 6, stroke: '#e11d48', strokeWidth: 2.5, fill: '#ffffff' }} 
+                  />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

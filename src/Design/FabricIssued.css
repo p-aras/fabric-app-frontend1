@@ -1021,4 +1021,10 @@
   margin-top: 1px;
 }
 
+/* Hide scrollbars for horizontal lists */
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+
 

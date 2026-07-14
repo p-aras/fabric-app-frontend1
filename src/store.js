@@ -1,6 +1,4 @@
-export const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:5001/api'
-  : 'https://fabric-app-backend-new.onrender.com/api';
+export const BASE_URL = 'https://fabric-app-backend-new.onrender.com/api';
 
 const getHeaders = () => {
   const token = localStorage.getItem('twms_token');
@@ -105,8 +103,20 @@ export const store = {
   // --- MATERIALS ---
   getMaterials: async (filters = {}) => {
     const params = new URLSearchParams();
-    if (filters.location) params.append('location', filters.location);
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
     if (filters.search) params.append('search', filters.search);
+    if (filters.category) params.append('category', filters.category);
+    if (filters.subCategory) params.append('subCategory', filters.subCategory);
+    if (filters.status) params.append('status', filters.status);
+    if (filters.type) params.append('type', filters.type);
+    if (filters.location) params.append('location', filters.location);
+    if (filters.supplier) params.append('supplier', filters.supplier);
+    if (filters.color) params.append('color', filters.color);
+    if (filters.name) params.append('name', filters.name);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+    
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return fetch(`${BASE_URL}/materials${queryString}`, {
       headers: getHeaders(),
@@ -383,6 +393,13 @@ export const store = {
 
   getJobOrders: async () => {
     return fetch(`${BASE_URL}/google-sheets/job-orders`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getIssuedLots: async () => {
+    return fetch(`${BASE_URL}/google-sheets/issued-lots`, {
       method: 'GET',
       headers: getHeaders(),
     }).then(handleResponse);

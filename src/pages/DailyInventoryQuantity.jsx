@@ -175,36 +175,7 @@ export default function DailyInventoryQuantity() {
     doc.setLineWidth(1);
     doc.line(M, y + 48, PAGE_W - M, y + 48);
 
-    y += 65;
-
-    // --- Summary Metrics Box Grid (Border box, no fills) ---
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(1);
-    doc.rect(M, y, PAGE_W - 2 * M, 45); // Outer border box
-
-    // Metrics vertical divider lines
-    doc.line(M + 105, y, M + 105, y + 45);
-    doc.line(M + 210, y, M + 210, y + 45);
-    doc.line(M + 315, y, M + 315, y + 45);
-    doc.line(M + 425, y, M + 425, y + 45);
-
-    doc.setTextColor(0, 0, 0);
-    setFont("bold", 8);
-    doc.text("TOTAL WEIGHT", M + 10, y + 16);
-    doc.text("TOTAL METERS", M + 115, y + 16);
-    doc.text("TOTAL ROLLS", M + 220, y + 16);
-    doc.text("MATERIAL ROLLS", M + 325, y + 16);
-    doc.text("DYEING ROLLS", M + 435, y + 16);
-
-    setFont("bold", 11);
-    doc.text(`${stats.totalWeight.toFixed(2)} KG`, M + 10, y + 34);
-    doc.text(`${stats.totalMeters.toFixed(2)} MTR`, M + 115, y + 34);
-    doc.text(`${stats.totalRolls}`, M + 220, y + 34);
-    doc.text(`${stats.materialRolls} Rl | ${stats.materialWeight.toFixed(1)} KG`, M + 325, y + 34);
-    doc.text(`${stats.dyeingRolls} Rl | ${stats.dyeingWeight.toFixed(1)} KG`, M + 435, y + 34);
-
-    y += 65;
+    y += 58;
 
     // --- Table Column Settings ---
     const headers = [

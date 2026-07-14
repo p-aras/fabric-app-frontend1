@@ -12,7 +12,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 1200px;
+  max-width: 100%;
   margin: 0 auto;
   animation: pageFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -848,4 +848,37 @@
 
 .btn-page-switch:hover svg {
   transform: rotate(180deg);
+}
+
+/* Re-add Manual Weight Input styling */
+.manual-weight-input-field {
+  width: 180px;
+  height: 70px;
+  font-size: 40px;
+  font-weight: 900;
+  text-align: center;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  outline: none;
+  font-family: monospace;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.manual-weight-input-field:focus {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  transform: scale(1.02);
+}
+
+.manual-weight-input-field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: rgba(255, 255, 255, 0.1);
 }

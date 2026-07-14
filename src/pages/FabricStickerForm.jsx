@@ -1595,14 +1595,6 @@ const FabricStickerForm = () => {
           <h1>Add material details</h1>
           {/* <p>Add material details</p> */}
         </div>
-        <div className="page-actions">
-          <button 
-            className="btn-page-switch" 
-            onClick={() => navigate('/dyeing-material')}
-          >
-            <ArrowLeftRight size={14} /> Switch to Dyeing Material
-          </button>
-        </div>
       </div>
 
       {/* Connection and Instruction Banner */}

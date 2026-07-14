@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { store } from '../store.js';
 import {
   Search, Sparkles, Box, Layers, CheckCircle2, AlertCircle,
   Info, RefreshCw, Warehouse, HelpCircle, ArrowRight, X, ArrowUpRight,
   Mic, MicOff, Volume2, MessageSquare, User, Check, Send, ArrowLeft,
-  Loader2, FileText
+  Loader2, FileText, Scale
 } from 'lucide-react';
 
 const CATEGORIES = ['Summer Fabric', 'Winter Fabric', 'Accessories'];
@@ -28,6 +28,11 @@ export default function Recommandation() {
 
   // Search query
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Selected location details table states
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [itemSearch, setItemSearch] = useState('');
+  const [tablePage, setTablePage] = useState(1);
 
   // Placement Modal states
   const [selectedShelf, setSelectedShelf] = useState(null);
@@ -67,6 +72,7 @@ export default function Recommandation() {
     setLoading(true);
     setError('');
     try {
+      // 1. Fetch active/dyeing materials and settings first (fast)
       const [settingsData, materialsData] = await Promise.all([
         store.getSettingsData(),
         store.getMaterials()
@@ -75,12 +81,52 @@ export default function Recommandation() {
       setRooms(settingsData.rooms || []);
       setRacks(settingsData.racks || []);
       setShelves(settingsData.shelves || []);
-      setMaterials(materialsData || []);
       setSuppliers(settingsData.suppliers || []);
+
+      const activeList = (materialsData || []).map(m => ({
+        ...m,
+        inventoryType: m.category === 'Dyeing' ? 'Dyeing Material' : 'Active Inventory'
+      }));
+
+      setMaterials(activeList);
+      setLoading(false); // Stop loader so page becomes interactive immediately
+
+      // 2. Fetch legacy old inventory in the background (heavy dataset)
+      setTimeout(async () => {
+        try {
+          const oldInvRes = await store.getInventory(1, 10000, '', '', '', '', 'All');
+          const rawOldList = oldInvRes?.data || [];
+          const legacyList = rawOldList
+            .filter(inv => {
+              const pkgs = parseInt(inv.bal_pkgs) || 0;
+              const wt = parseFloat(inv.bal_wt) || 0;
+              return pkgs > 0 || wt > 0;
+            })
+            .map(inv => ({
+              id: `old-${inv.id}`,
+              code: inv.barcode || `OLD-${inv.id}`,
+              name: inv.item_description || 'Legacy Material',
+              category: 'Old Inventory',
+              color: inv.shade || '—',
+              weight: parseFloat(inv.bal_wt) || 0.00,
+              rolls: parseInt(inv.bal_pkgs) || 0,
+              supplier: inv.party || '—',
+              location: inv.store || 'Unassigned',
+              status: 'Active',
+              inventoryType: 'Old Inventory',
+              lotNo: inv.lot_no || '—'
+            }));
+
+          // Asynchronously merge legacy list with active materials
+          setMaterials(prev => [...prev, ...legacyList]);
+        } catch (oldErr) {
+          console.error("Error loading background legacy inventory in Recommendation:", oldErr);
+        }
+      }, 50);
+
     } catch (e) {
       console.error(e);
       setError('Failed to fetch warehouse data. Please check connection.');
-    } finally {
       setLoading(false);
     }
   };
@@ -152,6 +198,19 @@ export default function Recommandation() {
     setSearchQuery(term);
   };
 
+  const getLocColors = (name) => {
+    let hash = 0;
+    const cleanName = String(name || 'Unassigned');
+    for (let i = 0; i < cleanName.length; i++) {
+      hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash % 360);
+    return {
+      primary: `hsl(${hue}, 65%, 48%)`,
+      bgLight: `hsl(${hue}, 65%, 97%)`,
+    };
+  };
+
   const handleOcrUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -183,156 +242,244 @@ export default function Recommandation() {
     }
   };
 
+  // Logic to calculate locations list (same structure as WarehousePage)
+  const locationsData = useMemo(() => {
+    const map = {};
+    materials.forEach(m => {
+      const loc = (m.location || 'Unassigned').trim();
+      if (!map[loc]) {
+        map[loc] = {
+          id: loc,
+          name: loc,
+          rolls: 0,
+          weight: 0,
+          itemsCount: 0,
+          categories: new Set(),
+          items: []
+        };
+      }
+      map[loc].rolls += (parseInt(m.rolls) || 0);
+      map[loc].weight += (parseFloat(m.weight) || 0);
+      map[loc].itemsCount += 1;
+      if (m.category) {
+        map[loc].categories.add(m.category);
+      }
+      map[loc].items.push(m);
+    });
+
+
+
+    return Object.values(map).map(loc => {
+      const shelfConfig = shelves.find(s => s.id === loc.id);
+      const capacity = shelfConfig ? (shelfConfig.capacity || 500) : 0;
+      const pct = capacity > 0 ? Math.round((loc.rolls / capacity) * 100) : 0;
+      return {
+        ...loc,
+        categories: Array.from(loc.categories),
+        capacity,
+        pct,
+        hasCapacity: capacity > 0,
+        room: shelfConfig ? shelfConfig.room : null
+      };
+    });
+  }, [materials, shelves]);
+
+  // Extract dynamic search suggestions from actual data (by item description)
+  const dynamicSuggestions = useMemo(() => {
+    const suggestions = new Set();
+    const defaults = ['Cotton Blue Fabric', 'Heavy Denim Black', 'Rib Knit Red', 'Viscose Lining White', 'Buttons Plastic', 'Metal Zippers'];
+
+    materials.forEach(m => {
+      // Use the actual item description (mapped to m.name)
+      if (m.name && m.name.trim() && m.name !== 'Legacy Material' && m.name !== 'New Material') {
+        // Limit suggestion length slightly for better button rendering
+        const cleanName = m.name.trim();
+        suggestions.add(cleanName);
+      }
+    });
+
+    const list = Array.from(suggestions).filter(term => term && term.length > 1);
+    if (list.length === 0) {
+      return defaults;
+    }
+
+    // Mix in defaults if we have very few elements
+    if (list.length < 4) {
+      defaults.forEach(d => {
+        if (list.length < 8 && !list.includes(d)) {
+          list.push(d);
+        }
+      });
+    }
+
+    return list.slice(0, 8);
+  }, [materials]);
+
   // Logic to calculate recommendations
   const getRecommendations = (queryText = searchQuery) => {
-    const { rooms: currentRooms, racks: currentRacks, shelves: currentShelves, materials: currentMaterials } = stateRef.current || { rooms, racks, shelves, materials };
-
     if (!queryText.trim()) {
-      return { sameMaterialRacks: [], newRacks: [], matchedMaterialsCount: 0, targetCategory: '' };
+      return { sameMaterialLocations: [], otherLocations: [], matchedMaterialsCount: 0, targetCategory: '' };
     }
 
     const query = queryText.toLowerCase().trim();
 
-    // 1. Find all materials that match the query
-    const matchingMaterials = currentMaterials.filter(m => {
-      const nameMatch = m.name?.toLowerCase().includes(query);
-      const catMatch = m.category?.toLowerCase().includes(query);
-      const subCatMatch = m.subCategory?.toLowerCase().includes(query);
-      return nameMatch || catMatch || subCatMatch;
-    });
-
-    const matchedMaterialsCount = matchingMaterials.length;
-
-    // 2. Determine target category from matches or default to query if it is one of the category names
+    // 1. Determine target category from matches or default to query if it is one of the category names
     let targetCategory = '';
     const categoryMatch = CATEGORIES.find(c => c.toLowerCase().includes(query));
 
     if (categoryMatch) {
       targetCategory = categoryMatch;
-    } else if (matchedMaterialsCount > 0) {
-      // Find the most frequent category in matched materials
-      const categoryCounts = {};
-      matchingMaterials.forEach(m => {
-        if (m.category) {
-          categoryCounts[m.category] = (categoryCounts[m.category] || 0) + 1;
-        }
+    } else {
+      const matchingMaterials = materials.filter(m => {
+        return (
+          m.name?.toLowerCase().includes(query) ||
+          m.category?.toLowerCase().includes(query) ||
+          m.subCategory?.toLowerCase().includes(query)
+        );
       });
-      let maxCount = 0;
-      Object.entries(categoryCounts).forEach(([cat, count]) => {
-        if (count > maxCount) {
-          maxCount = count;
-          targetCategory = cat;
-        }
-      });
+      if (matchingMaterials.length > 0) {
+        const categoryCounts = {};
+        matchingMaterials.forEach(m => {
+          if (m.category) {
+            categoryCounts[m.category] = (categoryCounts[m.category] || 0) + 1;
+          }
+        });
+        let maxCount = 0;
+        Object.entries(categoryCounts).forEach(([cat, count]) => {
+          if (count > maxCount) {
+            maxCount = count;
+            targetCategory = cat;
+          }
+        });
+      }
     }
 
-    // Determine target room ID for this category
-    const targetRoom = currentRooms.find(r => r.category === targetCategory);
-    const targetRoomId = targetRoom ? targetRoom.id : null;
+    // 2. Group locations:
+    // A. Locations with similar materials
+    // B. Other Locations (no similar materials)
+    const sameMaterialLocations = [];
+    const otherLocations = [];
 
-    // 3. Find shelves and racks storing matching materials
-    const matchingShelfIds = new Set(matchingMaterials.map(m => m.location).filter(Boolean));
-    const matchingRackIds = new Set();
+    locationsData.forEach(loc => {
+      const matchingItems = loc.items.filter(item => {
+        return (
+          item.name?.toLowerCase().includes(query) ||
+          item.code?.toLowerCase().includes(query) ||
+          (item.color && item.color.toLowerCase().includes(query)) ||
+          (item.category && item.category.toLowerCase().includes(query)) ||
+          (item.lotNo && item.lotNo.toLowerCase().includes(query))
+        );
+      });
 
-    // Map shelf to rack
-    const shelfToRackMap = {};
-    currentShelves.forEach(sh => {
-      shelfToRackMap[sh.id] = sh.rack;
-    });
+      const hasMatchingItems = matchingItems.length > 0;
+      const val = {
+        ...loc,
+        matchingItems,
+        matchedCount: matchingItems.length
+      };
 
-    matchingShelfIds.forEach(shelfId => {
-      const rackId = shelfToRackMap[shelfId];
-      if (rackId) {
-        matchingRackIds.add(rackId);
+      if (hasMatchingItems) {
+        sameMaterialLocations.push(val);
+      } else {
+        otherLocations.push(val);
       }
     });
 
-    // Enrich racks with shelves details
-    const enrichRackDetails = (rackList) => {
-      return rackList.map(rack => {
-        const rackShelves = shelves.filter(s => s.rack === rack.id).map(s => {
-          const storedItems = materials.filter(m => m.location === s.id);
-          const isFull = s.used >= s.capacity;
-          const pct = s.capacity > 0 ? Math.round((s.used / s.capacity) * 100) : 0;
-          return { ...s, storedItems, isFull, pct };
-        });
+    const matchedMaterialsCount = sameMaterialLocations.reduce((sum, l) => sum + l.matchedCount, 0);
 
-        // Compute rack occupancy percentage
-        const totalCap = rackShelves.reduce((sum, s) => sum + s.capacity, 0);
-        const totalUsed = rackShelves.reduce((sum, s) => sum + s.used, 0);
-        const rackPct = totalCap > 0 ? Math.round((totalUsed / totalCap) * 100) : 0;
+    // Sort sameMaterialLocations by matchedCount descending
+    sameMaterialLocations.sort((a, b) => b.matchedCount - a.matchedCount);
 
-        // Find matching materials specific to this rack
-        const similarMaterialsInRack = matchingMaterials.filter(m =>
-          m.location && shelfToRackMap[m.location] === rack.id
-        );
+    // Sort otherLocations: prioritize ones with capacity that are not full, and matching categories
+    otherLocations.sort((a, b) => {
+      const aMatchesRoom = targetCategory && a.categories.includes(targetCategory);
+      const bMatchesRoom = targetCategory && b.categories.includes(targetCategory);
+      if (aMatchesRoom !== bMatchesRoom) return aMatchesRoom ? -1 : 1;
 
-        const roomInfo = rooms.find(r => r.id === rack.room);
+      const aFull = a.hasCapacity && a.rolls >= a.capacity;
+      const bFull = b.hasCapacity && b.rolls >= b.capacity;
+      if (aFull !== bFull) return aFull ? 1 : -1;
 
-        return {
-          ...rack,
-          shelves: rackShelves,
-          rackPct,
-          totalCap,
-          totalUsed,
-          similarMaterialsInRack,
-          roomInfo
-        };
-      });
-    };
-
-    // Group Racks:
-    // A. Racks with similar materials
-    const sameMaterialRacksData = racks.filter(r => matchingRackIds.has(r.id));
-
-    // B. New Racks (no similar materials)
-    let newRacksData = racks.filter(r => !matchingRackIds.has(r.id));
-
-    if (targetRoomId) {
-      newRacksData = [
-        ...newRacksData.filter(r => r.room === targetRoomId),
-        ...newRacksData.filter(r => r.room !== targetRoomId)
-      ];
-    }
+      return a.rolls - b.rolls; // Least filled first
+    });
 
     return {
-      sameMaterialRacks: enrichRackDetails(sameMaterialRacksData),
-      newRacks: enrichRackDetails(newRacksData),
+      sameMaterialLocations,
+      otherLocations,
       matchedMaterialsCount,
       targetCategory
     };
   };
 
-  const { sameMaterialRacks, newRacks, matchedMaterialsCount, targetCategory } = getRecommendations();
+  const { sameMaterialLocations, otherLocations, matchedMaterialsCount, targetCategory } = getRecommendations();
+
+  // Reset table pagination when selectedLocation or itemSearch changes
+  useEffect(() => {
+    setTablePage(1);
+  }, [selectedLocation, itemSearch]);
+
+  // Selected location details helper calculations
+  const selectedLocDetails = useMemo(() => {
+    return locationsData.find(l => l.id === selectedLocation);
+  }, [locationsData, selectedLocation]);
+
+  // Items within selected location matching itemSearch
+  const filteredItems = useMemo(() => {
+    if (!selectedLocDetails) return [];
+    return selectedLocDetails.items.filter(item => {
+      const q = itemSearch.toLowerCase();
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.code.toLowerCase().includes(q) ||
+        (item.color && item.color.toLowerCase().includes(q)) ||
+        (item.category && item.category.toLowerCase().includes(q)) ||
+        (item.lotNo && item.lotNo.toLowerCase().includes(q))
+      );
+    });
+  }, [selectedLocDetails, itemSearch]);
+
+  const itemsPerPage = 50;
+  const paginatedItems = useMemo(() => {
+    const start = (tablePage - 1) * itemsPerPage;
+    return filteredItems.slice(start, start + itemsPerPage);
+  }, [filteredItems, tablePage]);
+
+  const totalTablePages = Math.max(1, Math.ceil(filteredItems.length / itemsPerPage));
 
   // --- SPEECH OUTPUT UTILITY ---
   const speakHindiText = (text, callbackOnEnd = null) => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'hi-IN';
+    // Delay of 100ms prevents the async cancel from clearing the new utterance in Chrome/Safari
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'hi-IN';
 
-    const voices = window.speechSynthesis.getVoices();
-    const hiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('HI'));
-    if (hiVoice) {
-      utterance.voice = hiVoice;
-    } else {
-      const inVoice = voices.find(v => v.lang.includes('IN') || v.lang.includes('in'));
-      if (inVoice) utterance.voice = inVoice;
-    }
+      const voices = window.speechSynthesis.getVoices();
+      if (voices && voices.length > 0) {
+        const hiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('HI'));
+        if (hiVoice) {
+          utterance.voice = hiVoice;
+        } else {
+          const inVoice = voices.find(v => v.lang.includes('IN') || v.lang.includes('in'));
+          if (inVoice) utterance.voice = inVoice;
+        }
+      }
 
-    utterance.onstart = () => setAgentState('speaking');
-    utterance.onend = () => {
-      setAgentState('idle');
-      if (callbackOnEnd) callbackOnEnd();
-    };
-    utterance.onerror = () => {
-      setAgentState('idle');
-      if (callbackOnEnd) callbackOnEnd();
-    };
+      utterance.onstart = () => setAgentState('speaking');
+      utterance.onend = () => {
+        setAgentState('idle');
+        if (callbackOnEnd) callbackOnEnd();
+      };
+      utterance.onerror = (e) => {
+        console.error('Speech synthesis error:', e);
+        setAgentState('idle');
+        if (callbackOnEnd) callbackOnEnd();
+      };
 
-    window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.speak(utterance);
+    }, 100);
   };
 
   const updateAgentSpeech = (text, followUp = null) => {
@@ -405,53 +552,17 @@ export default function Recommandation() {
 
     const results = getRecommendations(finalSearchTerm);
 
-    if (results.matchedMaterialsCount > 0 && results.sameMaterialRacks.length > 0) {
-      const placements = [];
-      results.sameMaterialRacks.forEach(rack => {
-        const matchingShelves = rack.shelves.filter(shelf => {
-          return shelf.storedItems.some(item => {
-            const q = finalSearchTerm.toLowerCase().trim();
-            return item.name?.toLowerCase().includes(q) ||
-              item.category?.toLowerCase().includes(q) ||
-              item.subCategory?.toLowerCase().includes(q);
-          });
-        }).map(s => s.id);
-
-        if (matchingShelves.length > 0) {
-          placements.push({
-            rackId: rack.id,
-            roomName: rack.roomInfo?.name || `Room ${rack.room}`,
-            shelves: matchingShelves
-          });
-        }
-      });
-
-      let replySpeech = '';
-      if (placements.length === 1) {
-        const p = placements[0];
-        replySpeech = `Same types ka material Room ${p.roomName} ke Rack ${p.rackId} ke Shelf ${p.shelves.join(', ')} me pehle se hi hai. Aap wahan store kar sakte hain.`;
-      } else if (placements.length > 1) {
-        const listText = placements.map(p => `Rack ${p.rackId} ke Shelf ${p.shelves.join(', ')}`).join(', aur ');
-        replySpeech = `Same types ka material ek se zyada racks me stored hai: ${listText} me hai. Aap inme se kisi bhi location par store kar sakte hain.`;
-      } else {
-        const bestRack = results.sameMaterialRacks[0];
-        const roomName = bestRack.roomInfo?.name || `Room ${bestRack.room}`;
-        replySpeech = `Room ${roomName} ke Rack ${bestRack.id} me same types ka material pehle se hi hai.`;
-      }
+    if (results.matchedMaterialsCount > 0 && results.sameMaterialLocations.length > 0) {
+      const placements = results.sameMaterialLocations.slice(0, 3).map(l => l.name);
+      let replySpeech = `Same type ka material location ${placements.join(', ')} me pehle se hi stored hai. Aap wahan store kar sakte hain.`;
       updateAgentSpeech(replySpeech);
     } else {
-      const currentRooms = stateRef.current.rooms;
-      const currentRacks = stateRef.current.racks;
-      const matchingRoom = currentRooms.find(r => r.category === results.targetCategory) || currentRooms[0];
-      const matchingRack = currentRacks.find(r => r.room === matchingRoom?.id) || currentRacks[0];
-
-      let replySpeech = `Same types ka material kisi bhi rack me nahi mila. `;
-      if (matchingRack) {
-        replySpeech += `Naye material ke liye room ${matchingRoom?.name || matchingRoom?.id} ke rack ${matchingRack.id} me jagah chune.`;
+      let replySpeech = `Same type ka material kisi bhi location me nahi mila. `;
+      if (results.otherLocations.length > 0) {
+        replySpeech += `Naye material ke liye location ${results.otherLocations[0].name} me jagah chune.`;
       } else {
         replySpeech += `Naye material ke liye jagah chune.`;
       }
-
       updateAgentSpeech(replySpeech);
     }
   };
@@ -526,7 +637,7 @@ export default function Recommandation() {
 
     try {
       await store.addMaterial(payload);
-      setSuccessToast(`Successfully stored "${payload.name}" in Shelf ${selectedShelf.id}!`);
+      setSuccessToast(`Successfully stored "${payload.name}" in Location ${selectedShelf.id}!`);
       setShowPlacementModal(false);
       setParsedOcrData(null); // Clear OCR parsed data
       loadData(); // reload stats
@@ -646,6 +757,63 @@ export default function Recommandation() {
         </div>
       ) : (
         <>
+          {/* PREMIUM STATS HEADER */}
+          <div className="grid grid-4" style={{ gap: 16, marginBottom: 12 }}>
+            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', background: 'linear-gradient(135deg, var(--primary-light) 0%, rgba(59, 130, 246, 0.05) 100%)', border: '1px solid rgba(59, 130, 246, 0.15)' }}>
+              <div style={{ padding: 10, borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex' }}>
+                <Layers size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Total Warehouse Stock</div>
+                <h3 style={{ margin: '4px 0 0 0', fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {materials.reduce((sum, m) => sum + (parseInt(m.rolls) || 0), 0).toLocaleString()} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>Rolls</span>
+                </h3>
+              </div>
+            </div>
+
+            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.02) 100%)', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
+              <div style={{ padding: 10, borderRadius: '50%', background: 'var(--success)', color: 'white', display: 'flex' }}>
+                <Scale size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Total Active Weight</div>
+                <h3 style={{ margin: '4px 0 0 0', fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {materials.reduce((sum, m) => sum + (parseFloat(m.weight) || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>Kg</span>
+                </h3>
+              </div>
+            </div>
+
+            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(139, 92, 246, 0.02) 100%)', border: '1px solid rgba(139, 92, 246, 0.15)' }}>
+              <div style={{ padding: 10, borderRadius: '50%', background: '#8b5cf6', color: 'white', display: 'flex' }}>
+                <Warehouse size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Active Storage Areas</div>
+                <h3 style={{ margin: '4px 0 0 0', fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {locationsData.length} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>Locations</span>
+                </h3>
+              </div>
+            </div>
+
+            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 18px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 800 }}>Stock Segments</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span>Active Stock:</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{materials.filter(m => m.inventoryType === 'Active Inventory').length} items</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span>Dyeing Stock:</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{materials.filter(m => m.inventoryType === 'Dyeing Material').length} items</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span>Old Inventory:</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{materials.filter(m => m.inventoryType === 'Old Inventory').length} items</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* SEARCH CARD */}
           <div className="grid grid-3" style={{ gap: 20 }}>
             <div className="card" style={{ gridColumn: 'span 2' }}>
@@ -729,7 +897,7 @@ export default function Recommandation() {
                     Quick Search Suggestions
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {['Cotton', 'Denim', 'Woolen', 'Viscose', 'Buttons', 'Zippers', 'Summer Fabric', 'Winter Fabric'].map(term => (
+                    {dynamicSuggestions.map(term => (
                       <button
                         key={term}
                         className={`btn btn-sm ${searchQuery.toLowerCase() === term.toLowerCase() ? 'btn-primary' : 'btn-secondary'}`}
@@ -790,13 +958,17 @@ export default function Recommandation() {
               <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 500, margin: '0 auto 16px auto', lineHeight: 1.5 }}>
                 (like <strong>"Cotton"</strong> or <strong>"Buttons"</strong>)
               </p>
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                <button className="btn btn-primary btn-sm" onClick={() => handleQuickSearch('Cotton')}>
-                  Search "Cotton" <ArrowRight size={14} style={{ marginLeft: 4 }} />
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => handleQuickSearch('Buttons')}>
-                  Search "Buttons" <ArrowRight size={14} style={{ marginLeft: 4 }} />
-                </button>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+                {dynamicSuggestions.slice(0, 3).map((term, idx) => (
+                  <button
+                    key={term}
+                    className={`btn ${idx === 0 ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={() => handleQuickSearch(term)}
+                  >
+                    Search "{term}" <ArrowRight size={14} />
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
@@ -833,13 +1005,37 @@ export default function Recommandation() {
                 </div>
               </div>
 
-              {/* SECTION A: SAME TYPE ALREADY IN RACK */}
+              {/* AI PLACEMENT ANALYSIS BOX */}
+              {matchedMaterialsCount > 0 && sameMaterialLocations.length > 0 && (
+                <div className="card animate-fade-in" style={{
+                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.03) 0%, rgba(139, 92, 246, 0.03) 100%)',
+                  border: '1px solid rgba(59, 130, 246, 0.15)',
+                  padding: '16px 20px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 14,
+                  borderRadius: 'var(--radius-lg)'
+                }}>
+                  <div style={{ padding: 8, borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', display: 'flex' }}>
+                    <Sparkles size={18} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>AI Placement Recommendation Analysis</h4>
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      We found <strong>{matchedMaterialsCount} similar items</strong> stored in <strong>{sameMaterialLocations.length} locations</strong>.
+                      For best grouping and efficiency, we recommend placing your new rolls at <strong style={{ color: 'var(--primary)' }}>{sameMaterialLocations[0].name}</strong>, which contains the highest concentration of matching materials ({sameMaterialLocations[0].matchedCount} items).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION A: SAME TYPE ALREADY IN LOCATION */}
               <div>
                 <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <CheckCircle2 size={18} style={{ color: 'var(--success)' }} />
-                  Section A: Recommended Racks (Same Type of Material Present)
+                  Section A: Recommended Storage Locations (Same Type of Material Present)
                 </h2>
-                {sameMaterialRacks.length === 0 ? (
+                {sameMaterialLocations.length === 0 ? (
                   <div className="card" style={{ padding: '24px', border: '1px solid var(--border)', background: 'var(--bg)' }}>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                       <Info size={18} style={{ color: 'var(--text-muted)', marginTop: 2 }} />
@@ -848,228 +1044,351 @@ export default function Recommandation() {
                           No Similar Materials Stored Yet
                         </h4>
                         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
-                          There are no racks containing materials matching <strong>"{searchQuery}"</strong>.
-                          Please refer to Section B below to start storing this category in a new rack layout.
+                          There are no storage areas containing materials matching <strong>"{searchQuery}"</strong>.
+                          Please refer to Section B below to start storing this category in a new location.
                         </p>
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="grid grid-2" style={{ gap: 20 }}>
-                    {sameMaterialRacks.map(rack => (
-                      <div
-                        key={rack.id}
-                        className="card card-hover"
-                        style={{ borderTop: `4px solid ${rack.roomInfo?.color || 'var(--primary)'}` }}
-                      >
-                        <div className="card-header" style={{ paddingBottom: 10 }}>
-                          <div>
-                            <div style={{ fontSize: 16, fontWeight: 750, color: 'var(--text-primary)' }}>
-                              Rack {rack.id}
+                    {sameMaterialLocations.map(loc => {
+                      const colors = getLocColors(loc.name);
+                      return (
+                        <div
+                          key={loc.id}
+                          className="card card-hover"
+                          style={{
+                            borderLeft: `6px solid ${colors.primary}`,
+                            cursor: 'pointer',
+                            background: selectedLocation === loc.id ? colors.bgLight : 'var(--surface)',
+                            boxShadow: selectedLocation === loc.id ? `0 0 0 2px ${colors.primary}` : 'none'
+                          }}
+                          onClick={() => setSelectedLocation(loc.id === selectedLocation ? null : loc.id)}
+                        >
+                          <div className="card-header" style={{ paddingBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <div style={{ fontSize: 16, fontWeight: 750, color: 'var(--text-primary)' }}>
+                                {loc.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                {loc.categories.length > 0 ? loc.categories.join(' • ') : 'General Store'}
+                              </div>
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                              Room {rack.room} ({rack.roomInfo?.name || 'Hall'}) • {rack.roomInfo?.category || 'General'}
-                            </div>
-                          </div>
-                          <span className="badge badge-success" style={{ fontWeight: 700, fontSize: 11 }}>
-                            {rack.similarMaterialsInRack.length} Similar Items
-                          </span>
-                        </div>
-
-                        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                          {/* Rack Capacity Meter */}
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
-                              <span>Total Rack Storage</span>
-                              <span style={{ float: 'right' }}>{rack.rackPct}% Full ({rack.totalUsed} / {rack.totalCap} Rolls)</span>
-                            </div>
-                            <div className="progress-bar" style={{ height: 6 }}>
-                              <div
-                                className={`progress-fill ${rack.rackPct >= 90 ? 'red' : rack.rackPct >= 50 ? 'yellow' : 'green'}`}
-                                style={{ width: `${rack.rackPct}%` }}
-                              />
-                            </div>
+                            <span className="badge badge-success" style={{ fontWeight: 700, fontSize: 11 }}>
+                              {loc.matchedCount} Similar Items
+                            </span>
                           </div>
 
-                          {/* Shelf listings */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                              Available Shelves in Rack
-                            </div>
-                            {rack.shelves.map(shelf => {
-                              const matchingItemsInShelf = shelf.storedItems.filter(item => {
-                                const q = searchQuery.toLowerCase().trim();
-                                return item.name?.toLowerCase().includes(q) ||
-                                  item.category?.toLowerCase().includes(q) ||
-                                  item.subCategory?.toLowerCase().includes(q);
-                              });
-                              const isMatchingShelf = matchingItemsInShelf.length > 0;
-
-                              return (
-                                <div
-                                  key={shelf.id}
-                                  style={{
-                                    padding: '10px 12px',
-                                    background: isMatchingShelf ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg)',
-                                    borderRadius: 'var(--radius-md)',
-                                    border: isMatchingShelf ? '1.5px solid var(--success)' : '1.5px solid var(--border)',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    gap: 10
-                                  }}
-                                >
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                                      <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>{shelf.id}</strong>
-                                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                        ({shelf.used}/{shelf.capacity} Rolls)
-                                      </span>
-                                      {isMatchingShelf && (
-                                        <span className="badge badge-success" style={{ fontSize: 10, padding: '1px 6px', fontWeight: 600 }}>
-                                          🎯 Matches "{searchQuery}"
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '280px' }}>
-                                      Holds: {shelf.storedItems.length === 0 ? (
-                                        <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Nothing yet</span>
-                                      ) : (
-                                        shelf.storedItems.map((m, idx) => {
-                                          const isItemMatch = matchingItemsInShelf.some(mi => mi.id === m.id);
-                                          return (
-                                            <span key={m.id} style={isItemMatch ? { fontWeight: 700, color: 'var(--success)' } : {}}>
-                                              {m.name} ({m.rolls}R){idx < shelf.storedItems.length - 1 ? ', ' : ''}
-                                            </span>
-                                          );
-                                        })
-                                      )}
-                                    </div>
-                                  </div>
-                                  <button
-                                    className={`btn btn-sm ${shelf.isFull ? 'btn-secondary' : 'btn-primary'}`}
-                                    disabled={shelf.isFull}
-                                    style={{ padding: '6px 10px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
-                                    onClick={() => handleOpenPlacement(shelf)}
-                                  >
-                                    {shelf.isFull ? 'Full' : 'Store'}
-                                    {!shelf.isFull && <ArrowUpRight size={13} />}
-                                  </button>
+                          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            {/* Capacity status if configured */}
+                            {loc.hasCapacity ? (
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                  <span>Storage Capacity</span>
+                                  <span>{loc.pct}% Full ({loc.rolls} / {loc.capacity} Rolls)</span>
                                 </div>
-                              );
-                            })}
+                                <div className="progress-bar" style={{ height: 6 }}>
+                                  <div
+                                    className={`progress-fill ${loc.pct >= 90 ? 'red' : loc.pct >= 50 ? 'yellow' : 'green'}`}
+                                    style={{ width: `${Math.min(100, loc.pct)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--text-secondary)' }}>
+                                <div>Total Rolls: <strong style={{ color: 'var(--text-primary)' }}>{loc.rolls}</strong></div>
+                                <div>Total Weight: <strong style={{ color: 'var(--text-primary)' }}>{loc.weight.toFixed(1)} Kg</strong></div>
+                              </div>
+                            )}
+
+                            {/* Stored items snippet */}
+                            <div style={{ background: 'var(--bg)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>
+                                Currently Storing
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                {loc.items.length === 0 ? (
+                                  <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>Empty Location</span>
+                                ) : (
+                                  <>
+                                    {loc.items.slice(0, 4).map((m, idx) => {
+                                      const isMatch = loc.matchingItems.some(mi => mi.id === m.id);
+                                      return (
+                                        <span key={m.id} style={isMatch ? { fontWeight: 700, color: 'var(--success)' } : {}}>
+                                          {m.name} ({m.rolls}R){idx < Math.min(loc.items.length, 4) - 1 ? ', ' : ''}
+                                        </span>
+                                      );
+                                    })}
+                                    {loc.items.length > 4 && (
+                                      <span style={{ color: 'var(--text-muted)' }}> and {loc.items.length - 4} more...</span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Store Button */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                              <button
+                                className={`btn btn-sm btn-primary`}
+                                disabled={loc.hasCapacity && loc.rolls >= loc.capacity}
+                                style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPlacement(loc);
+                                }}
+                              >
+                                {loc.hasCapacity && loc.rolls >= loc.capacity ? 'Full' : 'Store Here'}
+                                {!(loc.hasCapacity && loc.rolls >= loc.capacity) && <ArrowUpRight size={13} />}
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
-              {/* SECTION B: USE NEW RACK (NO SIMILAR MATERIALS STored) */}
+              {/* SECTION B: OTHER AVAILABLE LOCATIONS */}
               <div>
                 <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Layers size={18} style={{ color: 'var(--primary)' }} />
-                  Section B: New Rack Placement (No Similar Materials in Rack)
+                  Section B: Other Storage Locations (No Similar Materials Stored)
                 </h2>
                 <div className="grid grid-2" style={{ gap: 20 }}>
-                  {newRacks.slice(0, 8).map(rack => {
-                    const isMatchingRoom = targetCategory && rack.roomInfo?.category === targetCategory;
+                  {otherLocations.slice(0, 12).map(loc => {
+                    const colors = getLocColors(loc.name);
+                    const isMatchingCategory = targetCategory && loc.categories.includes(targetCategory);
                     return (
                       <div
-                        key={rack.id}
+                        key={loc.id}
                         className="card card-hover"
                         style={{
-                          borderTop: `4px solid ${rack.roomInfo?.color || 'var(--border)'}`,
-                          background: isMatchingRoom ? 'var(--surface)' : 'rgba(255, 255, 255, 0.02)',
-                          opacity: isMatchingRoom ? 1 : 0.8
+                          borderLeft: `6px solid ${colors.primary}`,
+                          cursor: 'pointer',
+                          background: selectedLocation === loc.id ? colors.bgLight : isMatchingCategory ? 'var(--surface)' : 'rgba(255, 255, 255, 0.02)',
+                          opacity: isMatchingCategory ? 1 : 0.85,
+                          boxShadow: selectedLocation === loc.id ? `0 0 0 2px ${colors.primary}` : 'none'
                         }}
+                        onClick={() => setSelectedLocation(loc.id === selectedLocation ? null : loc.id)}
                       >
-                        <div className="card-header" style={{ paddingBottom: 10 }}>
+                        <div className="card-header" style={{ paddingBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontSize: 16, fontWeight: 750, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                              Rack {rack.id}
-                              {isMatchingRoom && (
+                              {loc.name}
+                              {isMatchingCategory && (
                                 <span className="badge badge-primary" style={{ fontSize: 10, fontWeight: 700 }}>
-                                  Matches Room Category
+                                  Category Match
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                              Room {rack.room} ({rack.roomInfo?.name || 'Hall'}) • {rack.roomInfo?.category || 'General'}
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                              {loc.categories.length > 0 ? loc.categories.join(' • ') : 'General Store'}
                             </div>
                           </div>
                           <span className="badge badge-secondary" style={{ fontSize: 11 }}>
-                            New Zone
+                            Available Zone
                           </span>
                         </div>
 
-                        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                          {/* Rack Capacity Meter */}
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
-                              <span>Total Rack Storage</span>
-                              <span style={{ float: 'right' }}>{rack.rackPct}% Full ({rack.totalUsed} / {rack.totalCap} Rolls)</span>
+                        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {/* Capacity status if configured */}
+                          {loc.hasCapacity ? (
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                <span>Storage Capacity</span>
+                                <span>{loc.pct}% Full ({loc.rolls} / {loc.capacity} Rolls)</span>
+                              </div>
+                              <div className="progress-bar" style={{ height: 6 }}>
+                                <div
+                                  className={`progress-fill ${loc.pct >= 90 ? 'red' : loc.pct >= 50 ? 'yellow' : 'green'}`}
+                                  style={{ width: `${Math.min(100, loc.pct)}%` }}
+                                />
+                              </div>
                             </div>
-                            <div className="progress-bar" style={{ height: 6 }}>
-                              <div
-                                className={`progress-fill ${rack.rackPct >= 90 ? 'red' : rack.rackPct >= 50 ? 'yellow' : 'green'}`}
-                                style={{ width: `${rack.rackPct}%` }}
-                              />
+                          ) : (
+                            <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--text-secondary)' }}>
+                              <div>Total Rolls: <strong style={{ color: 'var(--text-primary)' }}>{loc.rolls}</strong></div>
+                              <div>Total Weight: <strong style={{ color: 'var(--text-primary)' }}>{loc.weight.toFixed(1)} Kg</strong></div>
+                            </div>
+                          )}
+
+                          {/* Stored items snippet */}
+                          <div style={{ background: 'var(--bg)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>
+                              Currently Storing
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                              {loc.items.length === 0 ? (
+                                <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>Empty Location (Perfect for storage)</span>
+                              ) : (
+                                <>
+                                  {loc.items.slice(0, 4).map((m, idx) => (
+                                    <span key={m.id}>
+                                      {m.name} ({m.rolls}R){idx < Math.min(loc.items.length, 4) - 1 ? ', ' : ''}
+                                    </span>
+                                  ))}
+                                  {loc.items.length > 4 && (
+                                    <span style={{ color: 'var(--text-muted)' }}> and {loc.items.length - 4} more...</span>
+                                  )}
+                                </>
+                              )}
                             </div>
                           </div>
 
-                          {/* Shelf listings */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                              Available Shelves
-                            </div>
-                            {rack.shelves.slice(0, 3).map(shelf => (
-                              <div
-                                key={shelf.id}
-                                style={{
-                                  padding: '10px 12px',
-                                  background: 'var(--bg)',
-                                  borderRadius: 'var(--radius-md)',
-                                  border: '1.5px solid var(--border)',
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  gap: 10
-                                }}
-                              >
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                    <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>{shelf.id}</strong>
-                                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                      ({shelf.used}/{shelf.capacity} Rolls)
-                                    </span>
-                                  </div>
-                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '280px' }}>
-                                    Holds: {shelf.storedItems.length === 0 ? (
-                                      <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Empty (Perfect for new storage)</span>
-                                    ) : (
-                                      shelf.storedItems.map(m => `${m.name} (${m.rolls}R)`).join(', ')
-                                    )}
-                                  </div>
-                                </div>
-                                <button
-                                  className={`btn btn-sm ${shelf.isFull ? 'btn-secondary' : 'btn-secondary'}`}
-                                  disabled={shelf.isFull}
-                                  style={{ padding: '6px 10px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
-                                  onClick={() => handleOpenPlacement(shelf)}
-                                >
-                                  {shelf.isFull ? 'Full' : 'Store'}
-                                  {!shelf.isFull && <ArrowUpRight size={13} />}
-                                </button>
-                              </div>
-                            ))}
+                          {/* Store Button */}
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                            <button
+                              className={`btn btn-sm btn-secondary`}
+                              disabled={loc.hasCapacity && loc.rolls >= loc.capacity}
+                              style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPlacement(loc);
+                              }}
+                            >
+                              {loc.hasCapacity && loc.rolls >= loc.capacity ? 'Full' : 'Store Here'}
+                              {!(loc.hasCapacity && loc.rolls >= loc.capacity) && <ArrowUpRight size={13} />}
+                            </button>
                           </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Details Table Section */}
+          {selectedLocation && selectedLocDetails && (
+            <div className="card" style={{ marginTop: 24 }}>
+              <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="card-title">
+                  <Box size={15} />
+                  Materials in Location: <span style={{ color: getLocColors(selectedLocDetails.name).primary, fontWeight: 700 }}>{selectedLocDetails.name}</span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ position: 'relative', width: '220px' }}>
+                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="form-control"
+                      style={{ paddingLeft: 30, height: '32px', fontSize: '12px' }}
+                      placeholder="Filter items inside location..."
+                      value={itemSearch}
+                      onChange={e => setItemSearch(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Showing {filteredItems.length} of {selectedLocDetails.items.length}
+                  </span>
+                </div>
+              </div>
+
+              <div className="card-body" style={{ padding: 0 }}>
+                {filteredItems.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '32px 0' }}>
+                    <div className="empty-state-icon"><Info size={24} /></div>
+                    <h4>No Items Match Filter</h4>
+                    <p>Try clearing your search query to see all items in this storage area.</p>
+                  </div>
+                ) : (
+                  <div className="table-wrap" style={{ border: 'none' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Barcode/Code</th>
+                          <th>Material Name</th>
+                          <th>Inventory Type</th>
+                          <th>Category</th>
+                          <th>Color/Shade</th>
+                          <th>Lot No</th>
+                          <th>Weight (Kg)</th>
+                          <th>Stock (Rolls)</th>
+                          <th>Supplier</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedItems.map(m => (
+                          <tr key={m.id}>
+                            <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>{m.code}</td>
+                            <td style={{ fontWeight: 600 }}>{m.name}</td>
+                            <td>
+                              <span style={{
+                                display: 'inline-block',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                padding: '2px 8px',
+                                borderRadius: 4,
+                                background: m.inventoryType === 'Active Inventory' ? 'var(--primary-light)' : m.inventoryType === 'Dyeing Material' ? '#f3e8ff' : '#ffedd5',
+                                color: m.inventoryType === 'Active Inventory' ? 'var(--primary)' : m.inventoryType === 'Dyeing Material' ? '#6b21a8' : '#c2410c'
+                              }}>
+                                {m.inventoryType}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="badge badge-primary" style={{ fontSize: 11 }}>
+                                {m.category}
+                              </span>
+                            </td>
+                            <td>{m.color || '—'}</td>
+                            <td style={{ fontWeight: 600 }}>{m.lotNo || '—'}</td>
+                            <td>{m.weight} Kg</td>
+                            <td style={{ fontWeight: 700 }}>{m.rolls}</td>
+                            <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                              {(!m.supplier) ? '—' : (isNaN(m.supplier) ? (suppliers.find(s => s.id === m.supplier || s.name === m.supplier)?.name || m.supplier) : (suppliers.find(s => s.id === Number(m.supplier))?.name || m.supplier))}
+                            </td>
+                            <td>
+                              <span className={`badge ${m.status === 'Active' ? 'badge-success' : m.status === 'Low Stock' ? 'badge-warning' : 'badge-secondary'}`}>
+                                {m.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {totalTablePages > 1 && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    borderTop: '1px solid var(--border)',
+                    background: 'var(--bg)',
+                    borderBottomLeftRadius: 'var(--radius-md)',
+                    borderBottomRightRadius: 'var(--radius-md)'
+                  }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                      Page <strong>{tablePage}</strong> of <strong>{totalTablePages}</strong> ({filteredItems.length} items)
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '4px 10px', fontSize: 12 }}
+                        onClick={(e) => { e.stopPropagation(); setTablePage(p => Math.max(1, p - 1)); }}
+                        disabled={tablePage === 1}
+                      >
+                        Prev
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '4px 10px', fontSize: 12 }}
+                        onClick={(e) => { e.stopPropagation(); setTablePage(p => Math.min(totalTablePages, p + 1)); }}
+                        disabled={tablePage === totalTablePages}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1083,7 +1402,7 @@ export default function Recommandation() {
             <div className="modal-header">
               <div className="modal-title">
                 <Box size={18} style={{ color: 'var(--primary)' }} />
-                Store Material in Shelf {selectedShelf.id}
+                Store Material in Location {selectedShelf.id}
               </div>
               <button className="btn btn-ghost btn-icon" onClick={() => setShowPlacementModal(false)}>
                 <X size={18} />

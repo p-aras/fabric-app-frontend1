@@ -816,6 +816,11 @@ const FabricStockMtr = () => {
       return;
     }
 
+    if (!barcodeSequence.next || isNaN(barcodeSequence.next)) {
+      showNotification('Barcode sequence not loaded yet. Please check backend connection.', 'error');
+      return;
+    }
+
     setIsProcessing(true);
     updateInstruction(`🖨️ Printing sticker for roll ${currentRollNumber + 1}...`, 'info');
 
@@ -928,6 +933,137 @@ const FabricStockMtr = () => {
     }
   };
 
+  const handleAutoPrintAll = async () => {
+    if (isProcessing) {
+      showNotification('Already processing, please wait...', 'warning');
+      return;
+    }
+
+    if (!batchActive) {
+      showNotification('Please start a batch first', 'warning');
+      return;
+    }
+
+    const remainingRollsCount = totalRollsInBatch - currentRollNumber;
+    if (remainingRollsCount <= 0) {
+      showNotification('All rolls already processed', 'warning');
+      return;
+    }
+
+    const metersVal = parseFloat(manualMeters);
+    if (isNaN(metersVal) || metersVal <= 0.1) {
+      showNotification(`Please enter a valid meters value.`, 'warning');
+      return;
+    }
+
+    if (!barcodeSequence.next || isNaN(barcodeSequence.next)) {
+      showNotification('Barcode sequence not loaded yet. Please check backend connection.', 'error');
+      return;
+    }
+
+    const confirmPrint = window.confirm(`Are you sure you want to print all remaining ${remainingRollsCount} rolls with ${metersVal.toFixed(2)} MTR?`);
+    if (!confirmPrint) return;
+
+    setIsProcessing(true);
+    updateInstruction(`🖨️ Auto-printing all remaining ${remainingRollsCount} rolls...`, 'info');
+
+    try {
+      let completedList = [];
+      let successCount = 0;
+      const startRollNum = currentRollNumber + 1;
+
+      for (let r = startRollNum; r <= totalRollsInBatch; r++) {
+        const offset = r - startRollNum;
+        const currentSeqId = barcodeSequence.next + offset;
+        const barcodeId = String(currentSeqId);
+
+        const currentTime = new Date();
+        const timeString = currentTime.toLocaleTimeString();
+        const dateString = currentTime.toISOString().split('T')[0];
+
+        const stickerData = {
+          cmfName: batchInfo.cmfName,
+          fabricName: batchInfo.fabricName,
+          group: batchInfo.group,
+          shade: batchInfo.shade,
+          weight: metersVal.toFixed(2), // manual meters value
+          lotNumber: batchInfo.lotNumber,
+          billNumber: batchInfo.billNumber,
+          date: batchInfo.date || dateString,
+          location: batchInfo.location,
+          receivedPerson: batchInfo.receivedPerson,
+          authorizedPerson: batchInfo.authorizedPerson,
+          rollNumber: r,
+          totalRolls: totalRollsInBatch,
+          uniqueBarcodeId: barcodeId,
+          unit: 'MTR', // unit property is set to meters
+          generatedAt: timeString,
+          timestamp: currentTime.toISOString(),
+          status: 'in_stock'
+        };
+
+        if (!isOnline) {
+          const queuedJob = { stickerData, rollNumber: r };
+          setOfflineQueue(prev => [...prev, queuedJob]);
+          completedList.push({
+            rollNumber: r,
+            weight: metersVal.toFixed(2),
+            barcodeId: barcodeId,
+            timestamp: timeString,
+            fabricName: batchInfo.fabricName,
+            shade: batchInfo.shade,
+            queued: true
+          });
+          successCount++;
+          continue;
+        }
+
+        const stored = await storeDataInGoogleSheets(stickerData, r);
+        if (stored) {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && printServiceStatus === 'ready') {
+            printViaPythonService(stickerData);
+          }
+          completedList.push({
+            rollNumber: r,
+            weight: metersVal.toFixed(2),
+            barcodeId: barcodeId,
+            timestamp: timeString,
+            fabricName: batchInfo.fabricName,
+            shade: batchInfo.shade
+          });
+          successCount++;
+        } else {
+          showNotification(`❌ Failed to save Roll ${r}. Stopped printing.`, 'error');
+          break;
+        }
+      }
+
+      if (successCount > 0) {
+        setCompletedRolls(prev => [...prev, ...completedList]);
+        const finalRollNo = currentRollNumber + successCount;
+        setCurrentRollNumber(finalRollNo);
+        setLastPrintedRoll(finalRollNo);
+        loadNextBarcodeId();
+        setManualMeters('');
+
+        if (finalRollNo >= totalRollsInBatch) {
+          showNotification(`🎉 Batch complete! Printed ${successCount} rolls.`, 'success');
+          setBatchActive(false);
+          await logBatchCompletion(finalRollNo);
+          updateInstruction('🎉 Batch completed! Start a new batch to continue', 'success');
+        } else {
+          showNotification(`✅ Printed ${successCount} rolls!`, 'success');
+          updateInstruction(`✅ Printed ${successCount} rolls. Ready for roll ${finalRollNo + 1} of ${totalRollsInBatch}`, 'success');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Auto print error:', error);
+      showNotification('Error during auto print', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Keyboard ENTER key on manual entry field triggers print
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -1029,15 +1165,6 @@ const FabricStockMtr = () => {
           <div className="breadcrumb"><span>Home</span><span>/</span><span>Material</span></div>
           <h1>Add Fabric Stock (Meters)</h1>
         </div>
-        <div className="page-actions">
-          <button
-            className="btn-page-switch"
-            onClick={() => navigate('/fabric-sticker')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <ArrowLeftRight size={14} /> Switch to Scale Weight
-          </button>
-        </div>
       </div>
 
       {/* Scale & Printer Status Banner */}
@@ -1112,26 +1239,49 @@ const FabricStockMtr = () => {
               />
             </div>
             {batchActive && (
-              <button
-                className="btn btn-success btn-lg"
-                style={{
-                  width: '100%',
-                  marginTop: 5,
-                  background: '#10b981',
-                  border: 'none',
-                  color: 'white',
-                  fontWeight: '700',
-                  boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8
-                }}
-                onClick={handlePrint}
-                disabled={isProcessing || !manualMeters || parseFloat(manualMeters) <= 0}
-              >
-                <Printer size={18} /> Print Sticker & Save Roll
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+                <button
+                  className="btn btn-success btn-lg"
+                  style={{
+                    width: '100%',
+                    marginTop: 5,
+                    background: '#10b981',
+                    border: 'none',
+                    color: 'white',
+                    fontWeight: '700',
+                    boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8
+                  }}
+                  onClick={handlePrint}
+                  disabled={isProcessing || !manualMeters || parseFloat(manualMeters) <= 0}
+                >
+                  <Printer size={18} /> Print Sticker & Save Roll
+                </button>
+
+                <button
+                  className="btn btn-warning btn-lg"
+                  style={{
+                    width: '100%',
+                    marginTop: 5,
+                    background: '#f59e0b',
+                    border: 'none',
+                    color: 'white',
+                    fontWeight: '700',
+                    boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8
+                  }}
+                  onClick={handleAutoPrintAll}
+                  disabled={isProcessing || !manualMeters || parseFloat(manualMeters) <= 0}
+                >
+                  <Printer size={18} /> Auto-Print All Remaining
+                </button>
+              </div>
             )}
           </div>
 
@@ -1217,7 +1367,7 @@ const FabricStockMtr = () => {
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div className="compact-form-row">
                 <div className="form-group">
-                  <label className="form-label">CMF Name <span className="required">*</span></label>
+                  <label className="form-label">CMP Name <span className="required">*</span></label>
                   <input className="form-control" placeholder="e.g. CMF-Fabric" value={formData.cmfName} onChange={e => handleInputChange('cmfName', e.target.value)} disabled={batchActive} />
                 </div>
                 <div className="form-group">

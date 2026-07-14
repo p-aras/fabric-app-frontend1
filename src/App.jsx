@@ -22,6 +22,12 @@ import PartaPendingPage from './pages/PartaPendingPage.jsx';
 import OldInventory from './pages/OldInventory.jsx';
 import JobOrder from './pages/JobOrder.jsx';
 import FabricStockMtr from './pages/FabricStockMtr.jsx';
+import MaterialAgainstPoForm from './pages/MaterialAgainstPoForm.jsx';
+import FabricPoAudit from './pages/FabricPoAudit.jsx';
+import ReAddMaterialForm from './pages/ReAddMaterialForm.jsx';
+
+
+
 import DailyInventoryQuantity from './pages/DailyInventoryQuantity.jsx';
 import SupervisorWiseReport from './pages/SupervisorWiseReport.jsx';
 import LocationWiseReport from './pages/LocationWiseReport.jsx';
@@ -260,6 +266,12 @@ export default function App() {
               <Route path="/old-inventory" element={<OldInventory />} />
               <Route path="/job-orders" element={<JobOrder />} />
               <Route path="/fabric-stock" element={<FabricStockMtr />} />
+              <Route path="/material-against-po" element={<MaterialAgainstPoForm />} />
+              <Route path="/fabric-po-audit" element={<FabricPoAudit />} />
+              <Route path="/re-add-material" element={<ReAddMaterialForm />} />
+
+
+
               <Route path="/reports/daily-inventory/quantity-wise" element={<DailyInventoryQuantity />} />
               <Route path="/reports/daily-cutting/cutter-master" element={<CutterMasterWiseReport />} />
               <Route path="/reports/daily-cutting/supervisor" element={<SupervisorWiseReport />} />

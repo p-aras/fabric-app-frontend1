@@ -19,12 +19,12 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
   const [manualBarcode, setManualBarcode] = useState('');
   const [remainingWeight, setRemainingWeight] = useState(null);
   const [activeTab, setActiveTab] = useState('individual');
-  
+
   // State for sticker generator
   const [showStickerGenerator, setShowStickerGenerator] = useState(false);
   const [currentReturnData, setCurrentReturnData] = useState(null);
   const [pendingReturnRecords, setPendingReturnRecords] = useState([]);
-  
+
   const API_BASE_URL = `${BASE_URL}/fabric-receiving`;
 
   useEffect(() => {
@@ -38,19 +38,19 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
     try {
       setLoading(true);
       console.log(`📡 Fetching issued rolls for lot: ${selectedJob['Lot Number']}`);
-      
+
       const response = await fetch(`${API_BASE_URL}/issued-rolls/${selectedJob['Lot Number']}`);
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
-      
+
       console.log('📊 Issued rolls response:', resData);
-      
+
       if (resData.success) {
-        let activeIssuedRolls = resData.data.filter(roll => 
+        let activeIssuedRolls = resData.data.filter(roll =>
           (roll.status === 'issued' || roll.status === 'partially_issued') &&
           (roll.totalReturnedWeight < roll.originalIssuedWeight)
         );
-        
+
         const transformedRolls = activeIssuedRolls.map(roll => ({
           ...roll,
           weight: roll.originalIssuedWeight,
@@ -59,18 +59,18 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
           returnedWeight: roll.totalReturnedWeight,
           usedWeight: roll.fabricUsedForCutting
         }));
-        
+
         const rollsByShadeMap = transformedRolls.reduce((acc, roll) => {
           const shade = roll.shade || 'Unknown';
           if (!acc[shade]) acc[shade] = [];
           acc[shade].push(roll);
           return acc;
         }, {});
-        
+
         setIssuedRolls(transformedRolls);
         setRollsByShade(rollsByShadeMap);
         console.log(`✅ Loaded ${transformedRolls.length} issued rolls across ${Object.keys(rollsByShadeMap).length} shades`);
-        
+
         transformedRolls.forEach(roll => {
           console.log(`   ${roll.barcodeId}: Issued=${roll.originalIssuedWeight}KG, Returned=${roll.totalReturnedWeight}KG, Available=${roll.availableToReturn}KG, Used=${roll.fabricUsedForCutting}KG, Party=${roll.cmfName || roll.party || 'N/A'}`);
         });
@@ -90,7 +90,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
       const response = await fetch(`${API_BASE_URL}/receiving-history/${selectedJob['Lot Number']}`);
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
-      
+
       if (resData.success) {
         setReceivingHistory(resData.data);
         console.log(`✅ Loaded ${resData.data.length} receiving records`);
@@ -117,38 +117,38 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
       alert(`No rolls found for shade: ${shade}`);
       return;
     }
-    
+
     const returnWeightValue = parseFloat(shadeReturnWeight[shade]);
     if (!returnWeightValue || returnWeightValue <= 0) {
       alert(`Please enter a valid return weight for shade: ${shade}`);
       return;
     }
-    
-    const totalAvailableWeight = rollsForShade.reduce((sum, roll) => 
+
+    const totalAvailableWeight = rollsForShade.reduce((sum, roll) =>
       sum + (roll.availableToReturn || (roll.originalIssuedWeight - roll.totalReturnedWeight)), 0
     );
-    
+
     if (returnWeightValue > totalAvailableWeight) {
       alert(`Return weight (${returnWeightValue} KG) exceeds available weight (${totalAvailableWeight.toFixed(2)} KG) for shade ${shade}`);
       return;
     }
-    
+
     setSubmitting(true);
-    
+
     try {
       let remainingToReturn = returnWeightValue;
       const returnRecords = [];
       let totalReturned = 0;
-      
+
       for (const roll of rollsForShade) {
         if (remainingToReturn <= 0) break;
-        
+
         const availableFromRoll = roll.availableToReturn || (roll.originalIssuedWeight - roll.totalReturnedWeight);
         const returnFromRoll = Math.min(availableFromRoll, remainingToReturn);
-        
+
         // FIXED: Get the party name correctly
         const partyName = roll.cmfName || roll.party || roll.fabricName;
-        
+
         const receivingRecord = {
           lotNumber: selectedJob['Lot Number'],
           fabricName: roll.fabricName,
@@ -167,7 +167,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
           originalIssuedWeight: roll.originalIssuedWeight,
           totalReturnedWeight: roll.totalReturnedWeight || 0
         };
-        
+
         const response = await fetch(`${API_BASE_URL}/store-fabric-receiving`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -175,7 +175,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
         });
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const resData = await response.json();
-        
+
         if (resData.success) {
           returnRecords.push(receivingRecord);
           remainingToReturn -= returnFromRoll;
@@ -185,21 +185,21 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
           throw new Error(`Failed to return roll ${roll.barcodeId}: ${resData.message}`);
         }
       }
-      
+
       alert(`✅ Successfully returned ${totalReturned.toFixed(2)} KG of shade ${shade}\nProcessed ${returnRecords.length} roll(s)`);
-      
+
       // Show sticker generator for the first returned roll
       if (returnRecords.length > 0) {
         setPendingReturnRecords(returnRecords);
         setCurrentReturnData(returnRecords[0]);
         setShowStickerGenerator(true);
       }
-      
+
       setShadeReturnWeight({});
       setSelectedShade(null);
       await loadIssuedRolls();
       await loadReceivingHistory();
-      
+
     } catch (error) {
       console.error('Error processing shade return:', error);
       alert('Error processing return. Please try again.');
@@ -217,19 +217,19 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
     try {
       setLoading(true);
       console.log(`🔍 Searching for barcode: ${searchBarcode}`);
-      
+
       const checkResponse = await fetch(`${API_BASE_URL}/check-barcode/${searchBarcode}?lotNumber=${selectedJob['Lot Number']}`);
       if (!checkResponse.ok) throw new Error(`HTTP error! Status: ${checkResponse.status}`);
       const checkData = await checkResponse.json();
-      
+
       if (checkData.success && checkData.data.issued) {
         const issuedRollsResponse = await fetch(`${API_BASE_URL}/issued-rolls/${selectedJob['Lot Number']}`);
         if (!issuedRollsResponse.ok) throw new Error(`HTTP error! Status: ${issuedRollsResponse.status}`);
         const rollsData = await issuedRollsResponse.json();
-        
+
         if (rollsData.success) {
           const foundRoll = rollsData.data.find(roll => roll.barcodeId === searchBarcode);
-          
+
           if (foundRoll) {
             const transformedRoll = {
               ...foundRoll,
@@ -239,7 +239,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
               returnedWeight: foundRoll.totalReturnedWeight,
               usedWeight: foundRoll.fabricUsedForCutting
             };
-            
+
             setSelectedRoll(transformedRoll);
             setSelectedShade(null);
             const maxReturnable = transformedRoll.availableToReturn;
@@ -273,56 +273,56 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
 
     try {
       setSubmitting(true);
-      
+
       const checkResponse = await fetch(`${API_BASE_URL}/check-barcode/${manualBarcode}?lotNumber=${selectedJob['Lot Number']}`);
       if (!checkResponse.ok) throw new Error(`HTTP error! Status: ${checkResponse.status}`);
       const checkData = await checkResponse.json();
-      
+
       if (!checkData.success || !checkData.data.issued) {
         alert(`❌ Barcode ${manualBarcode} was not issued for lot ${selectedJob['Lot Number']}`);
         setSubmitting(false);
         return;
       }
-      
+
       const issuedRollsResponse = await fetch(`${API_BASE_URL}/issued-rolls/${selectedJob['Lot Number']}`);
       if (!issuedRollsResponse.ok) throw new Error(`HTTP error! Status: ${issuedRollsResponse.status}`);
       const rollsData = await issuedRollsResponse.json();
-      
+
       if (!rollsData.success) {
         alert('Could not retrieve roll data');
         setSubmitting(false);
         return;
       }
-      
+
       const foundRoll = rollsData.data.find(roll => roll.barcodeId === manualBarcode);
-      
+
       if (!foundRoll) {
         alert('Roll data not found');
         setSubmitting(false);
         return;
       }
-      
+
       const maxReturnable = foundRoll.originalIssuedWeight - foundRoll.totalReturnedWeight;
-      
+
       const returnWeightInput = prompt(`Enter return weight for ${manualBarcode}\nIssued: ${foundRoll.originalIssuedWeight} KG\nAlready Returned: ${foundRoll.totalReturnedWeight} KG\nAvailable to Return: ${maxReturnable.toFixed(2)} KG:`, maxReturnable.toString());
-      
+
       if (!returnWeightInput) {
         setSubmitting(false);
         return;
       }
-      
+
       const returnWeightValue = parseFloat(returnWeightInput);
       if (isNaN(returnWeightValue) || returnWeightValue <= 0 || returnWeightValue > maxReturnable) {
         alert(`Invalid weight. Please enter a value between 0 and ${maxReturnable.toFixed(2)}`);
         setSubmitting(false);
         return;
       }
-      
+
       const reasonInput = prompt('Enter reason for return:', 'Returned');
-      
+
       // FIXED: Get the party name correctly
       const partyName = foundRoll.cmfName || foundRoll.party || foundRoll.fabricName;
-      
+
       const receivingRecord = {
         lotNumber: selectedJob['Lot Number'],
         fabricName: foundRoll.fabricName,
@@ -341,7 +341,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
         originalIssuedWeight: foundRoll.originalIssuedWeight,
         totalReturnedWeight: foundRoll.totalReturnedWeight
       };
-      
+
       const response = await fetch(`${API_BASE_URL}/store-fabric-receiving`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -349,18 +349,18 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
       });
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
-      
+
       if (resData.success) {
         const newTotalReturned = foundRoll.totalReturnedWeight + returnWeightValue;
         const fabricUsed = foundRoll.originalIssuedWeight - newTotalReturned;
         alert(`✅ Successfully returned ${returnWeightValue} KG of ${manualBarcode}\n📦 Total Returned: ${newTotalReturned.toFixed(2)} KG\n✂️ Fabric Used: ${fabricUsed.toFixed(2)} KG`);
-        
+
         if (onReceiveComplete) onReceiveComplete(receivingRecord);
-        
+
         // Show sticker generator
         setCurrentReturnData(receivingRecord);
         setShowStickerGenerator(true);
-        
+
         await loadIssuedRolls();
         await loadReceivingHistory();
         setSelectedRoll(null);
@@ -400,7 +400,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
 
     // FIXED: Get the party name correctly from selectedRoll
     const partyName = selectedRoll.cmfName || selectedRoll.party || selectedRoll.fabricName;
-    
+
     console.log('📋 Submitting return with party:', partyName);
     console.log('📋 Roll data:', {
       cmfName: selectedRoll.cmfName,
@@ -435,23 +435,23 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
       });
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const resData = await response.json();
-      
+
       if (resData.success) {
         const newTotalReturned = (selectedRoll.totalReturnedWeight || 0) + returnWeightValue;
         const fabricUsed = selectedRoll.originalIssuedWeight - newTotalReturned;
-        
+
         if (newTotalReturned >= selectedRoll.originalIssuedWeight) {
           alert(`✅ Successfully returned full roll ${selectedRoll.barcodeId}\n📦 Total Returned: ${newTotalReturned.toFixed(2)} KG\n✂️ Fabric Used: ${fabricUsed.toFixed(2)} KG`);
         } else {
           alert(`✅ Successfully returned ${returnWeightValue} KG of ${selectedRoll.barcodeId}\n📦 Total Returned: ${newTotalReturned.toFixed(2)} KG\n✂️ Fabric Used: ${fabricUsed.toFixed(2)} KG\n🔄 Remaining to Return: ${(selectedRoll.originalIssuedWeight - newTotalReturned).toFixed(2)} KG`);
         }
-        
+
         if (onReceiveComplete) onReceiveComplete(receivingRecord);
-        
+
         // Show sticker generator for the returned roll
         setCurrentReturnData(receivingRecord);
         setShowStickerGenerator(true);
-        
+
         await loadIssuedRolls();
         await loadReceivingHistory();
         setSelectedRoll(null);
@@ -470,7 +470,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
 
   const handleStickerGenerated = (stickerData) => {
     console.log('✅ Return sticker generated:', stickerData);
-    
+
     // If there are multiple pending return records, process the next one
     if (pendingReturnRecords.length > 1) {
       const remainingRecords = pendingReturnRecords.slice(1);
@@ -484,7 +484,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
     } else {
       setPendingReturnRecords([]);
     }
-    
+
     // You can also show a notification or trigger any other action
     const notification = document.createElement('div');
     notification.textContent = `✓ Sticker generated for returned roll: ${stickerData.uniqueBarcodeId}`;
@@ -571,7 +571,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
               color: '#666'
             }}>×</button>
           </div>
-          
+
           <div className="receiving-modal-body" style={{
             padding: '24px',
             overflowY: 'auto',
@@ -680,7 +680,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                     <h3 style={{ margin: 0, color: '#333' }}>🎨 Return Fabric by Shade</h3>
                     <p style={{ margin: '5px 0 0', color: '#666', fontSize: '14px' }}>Return weight across multiple rolls of the same shade</p>
                   </div>
-                  
+
                   {loading ? (
                     <div className="loading-spinner" style={{ textAlign: 'center', padding: '40px' }}>Loading shades...</div>
                   ) : Object.keys(rollsByShade).length === 0 ? (
@@ -695,7 +695,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                         const totalAvailable = totalIssued - totalReturned;
                         const totalUsed = totalReturned;
                         const rollCount = rolls.length;
-                        
+
                         return (
                           <div key={shade} style={{
                             background: 'white',
@@ -729,7 +729,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                                 <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#4caf50' }}>{totalAvailable.toFixed(2)} kg</div>
                               </div>
                             </div>
-                            
+
                             {/* Summary Stats */}
                             <div style={{
                               display: 'flex',
@@ -745,7 +745,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                               <div>📥 Returned (In Inventory): <strong style={{ color: '#4caf50' }}>{totalReturned.toFixed(2)} kg</strong></div>
                               <div>✂️ Used for Cutting: <strong style={{ color: '#2196f3' }}>{totalUsed.toFixed(2)} kg</strong></div>
                             </div>
-                            
+
                             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
                               <div style={{ flex: 1 }}>
                                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#555' }}>
@@ -789,7 +789,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                                 {submitting ? 'Processing...' : `Return ${shade}`}
                               </button>
                             </div>
-                            
+
                             {/* Roll details expandable */}
                             <details style={{ marginTop: '16px' }}>
                               <summary style={{ cursor: 'pointer', color: '#667eea', fontSize: '13px' }}>
@@ -931,27 +931,27 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                         <h4 style={{ margin: '0 0 20px 0', color: '#333', borderBottom: '2px solid #667eea', paddingBottom: '10px' }}>
                           📝 Return to Inventory
                         </h4>
-                        
+
                         <div style={{ marginBottom: '16px' }}>
                           <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#555' }}>Barcode ID</label>
                           <input type="text" value={selectedRoll.barcodeId} disabled style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', background: '#e9ecef' }} />
                         </div>
-                        
+
                         <div style={{ marginBottom: '16px' }}>
                           <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#555' }}>Party / CMP Name</label>
                           <input type="text" value={selectedRoll.cmfName || selectedRoll.party || 'N/A'} disabled style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', background: '#e9ecef' }} />
                         </div>
-                        
+
                         <div style={{ marginBottom: '16px' }}>
                           <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#555' }}>Fabric</label>
                           <input type="text" value={selectedRoll.fabricName} disabled style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', background: '#e9ecef' }} />
                         </div>
-                        
+
                         <div style={{ marginBottom: '16px' }}>
                           <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#555' }}>Shade</label>
                           <input type="text" value={selectedRoll.shade} disabled style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', background: '#e9ecef' }} />
                         </div>
-                        
+
                         <div style={{ marginBottom: '16px', background: '#e3f2fd', padding: '12px', borderRadius: '8px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                             <span>📦 Total Issued:</span>
@@ -966,12 +966,12 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                             <strong style={{ color: '#2196f3' }}>{(selectedRoll.fabricUsedForCutting || 0).toFixed(2)} KG</strong>
                           </div>
                         </div>
-                        
+
                         <div style={{ marginBottom: '16px' }}>
                           <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#555' }}>Available to Return (KG)</label>
                           <input type="text" value={(selectedRoll.availableToReturn || selectedRoll.remainingWeight).toFixed(2)} disabled style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff3e0', fontWeight: 'bold', color: '#f57c00' }} />
                         </div>
-                        
+
                         <div style={{ marginBottom: '16px' }}>
                           <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#555' }}>Return Weight (KG)</label>
                           <input
@@ -985,7 +985,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                             style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px' }}
                           />
                         </div>
-                        
+
                         <div style={{ marginBottom: '24px' }}>
                           <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px', color: '#555' }}>Reason</label>
                           <select value={reason} onChange={(e) => setReason(e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px' }}>
@@ -996,7 +996,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                             <option value="Partial Return">Partial Return</option>
                           </select>
                         </div>
-                        
+
                         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                           <button onClick={handleSubmitReturn} disabled={submitting} style={{
                             flex: 1,
@@ -1047,7 +1047,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                     <div style={{ fontSize: '48px', marginBottom: '16px' }}>✏️</div>
                     <h3 style={{ margin: '0 0 8px 0', color: '#333' }}>Manual Barcode Entry</h3>
                     <p style={{ color: '#666', marginBottom: '24px' }}>Enter a barcode ID to process a return</p>
-                    
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       <input
                         type="text"
@@ -1096,7 +1096,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                     <h3 style={{ margin: 0, color: '#333' }}>📜 Receiving History</h3>
                     <p style={{ margin: '5px 0 0', color: '#666', fontSize: '14px' }}>Previous returns recorded for this Lot</p>
                   </div>
-                  
+
                   {receivingHistory.length === 0 ? (
                     <div className="empty-state" style={{ textAlign: 'center', padding: '40px', background: '#f9f9f9', borderRadius: '8px' }}>
                       <p>No receiving records found for this lot.</p>
@@ -1135,7 +1135,7 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
           </div>
         </div>
       </div>
-      
+
       {showStickerGenerator && currentReturnData && (
         <ReturnStickerGenerator
           returnData={currentReturnData}

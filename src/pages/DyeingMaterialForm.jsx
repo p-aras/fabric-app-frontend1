@@ -1688,14 +1688,6 @@ const DyeingMaterialForm = () => {
             ✨ Fields are automatically pre-filled for dyeing materials. You can edit them as needed.
           </p>
         </div>
-        <div className="page-actions">
-          <button
-            className="btn-page-switch"
-            onClick={() => navigate('/fabric-sticker')}
-          >
-            <ArrowLeftRight size={14} /> Switch to Material Add
-          </button>
-        </div>
       </div>
 
       {/* Connection and Instruction Banner */}

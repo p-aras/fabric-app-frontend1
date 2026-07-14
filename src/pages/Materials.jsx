@@ -644,6 +644,22 @@ export default function Materials() {
   const [suppliers, setSuppliers] = useState([]);
   const [search, setSearch] = useState('');
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Global filter options populated from the backend
+  const [filterOptions, setFilterOptions] = useState({
+    categories: CATEGORIES,
+    colors: [],
+    locations: [],
+    names: [],
+    subCategories: [],
+    suppliers: []
+  });
+
   // Selected filter states (arrays for multi-select)
   const [selectedCats, setSelectedCats] = useState([]);
   const [selectedSubCats, setSelectedSubCats] = useState([]);
@@ -662,81 +678,125 @@ export default function Materials() {
 
   const navigate = useNavigate();
 
-  const load = () => {
-    store.getMaterials().then(setMaterials).catch(console.error);
+  // Load suppliers once on component mount
+  useEffect(() => {
     store.getSuppliers().then(setSuppliers).catch(console.error);
+  }, []);
+
+  const load = () => {
+    store.getMaterials({
+      page: currentPage,
+      limit: itemsPerPage,
+      search,
+      category: selectedCats.join(','),
+      subCategory: selectedSubCats.join(','),
+      status: selectedStatuses.join(','),
+      supplier: selectedSuppliers.join(','),
+      color: selectedColors.join(','),
+      location: selectedLocations.join(','),
+      name: selectedNames.join(','),
+      type: selectedTypes.join(','),
+      startDate,
+      endDate
+    }).then(res => {
+      if (res && res.success) {
+        setMaterials(res.data || []);
+        setTotalCount(res.totalCount || 0);
+        setTotalPages(res.totalPages || 1);
+        if (res.filterOptions) {
+          setFilterOptions(res.filterOptions);
+        }
+      } else {
+        // Fallback for non-paginated array
+        const rawList = res || [];
+        setMaterials(rawList);
+        setTotalCount(rawList.length);
+        setTotalPages(1);
+      }
+    }).catch(console.error);
   };
-  useEffect(load, []);
+
+  // Re-fetch data when page, page limit, or filters change
+  useEffect(() => {
+    load();
+  }, [
+    currentPage,
+    itemsPerPage,
+    search,
+    selectedCats,
+    selectedSubCats,
+    selectedStatuses,
+    selectedSuppliers,
+    selectedColors,
+    selectedLocations,
+    selectedNames,
+    selectedTypes,
+    startDate,
+    endDate
+  ]);
+
+  // Reset to page 1 when search or any filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    search,
+    selectedCats,
+    selectedSubCats,
+    selectedStatuses,
+    selectedSuppliers,
+    selectedColors,
+    selectedLocations,
+    selectedNames,
+    selectedTypes,
+    startDate,
+    endDate
+  ]);
 
   // Reset subcategory when categories selection changes
   useEffect(() => {
     setSelectedSubCats([]);
   }, [selectedCats]);
 
-  // Extract unique filter list options
-  const uniqueColors = useMemo(() => {
-    return [...new Set(materials.map(m => m.color).filter(Boolean))].sort();
-  }, [materials]);
-
-  const uniqueLocations = useMemo(() => {
-    return [...new Set(materials.map(m => m.location).filter(Boolean))].sort();
-  }, [materials]);
-
+  // Use values from backend filterOptions for the filters
+  const uniqueColors = useMemo(() => filterOptions.colors, [filterOptions.colors]);
+  const uniqueLocations = useMemo(() => filterOptions.locations, [filterOptions.locations]);
   const uniqueCategories = useMemo(() => {
-    const cats = [...new Set(materials.map(m => m.category).filter(Boolean))];
-    if (cats.length === 0) return CATEGORIES;
-    return cats.sort();
-  }, [materials]);
-
-  const uniqueNames = useMemo(() => {
-    return [...new Set(materials.map(m => m.name).filter(Boolean))].sort();
-  }, [materials]);
+    return filterOptions.categories.length === 0 ? CATEGORIES : filterOptions.categories;
+  }, [filterOptions.categories]);
+  const uniqueNames = useMemo(() => filterOptions.names, [filterOptions.names]);
 
   const availableSubCats = useMemo(() => {
-    const filteredMats = selectedCats.length === 0
-      ? materials
-      : materials.filter(m => selectedCats.includes(m.category));
-    const subcats = [...new Set(filteredMats.map(m => m.subCategory).filter(Boolean))].sort();
-    if (subcats.length === 0) {
-      if (selectedCats.length === 1) {
-        return SUB_CATS[selectedCats[0]] || [];
-      }
-      return Object.values(SUB_CATS).flat();
-    }
-    return subcats.sort();
-  }, [materials, selectedCats]);
-
-  const filtered = materials.filter(m => {
-    const q = search.toLowerCase();
-    const matchQ = !q || m.name?.toLowerCase().includes(q) || m.code?.toLowerCase().includes(q) || m.location?.toLowerCase().includes(q);
-    const matchCat = selectedCats.length === 0 || selectedCats.includes(m.category);
-    const matchSubCat = selectedSubCats.length === 0 || selectedSubCats.includes(m.subCategory);
-    const matchStatus = selectedStatuses.length === 0 || selectedStatuses.includes(m.status);
-    const matchSupplier = selectedSuppliers.length === 0 || selectedSuppliers.includes(getSupplierName(m.supplier));
-    const matchColor = selectedColors.length === 0 || selectedColors.includes(m.color);
-    const matchLocation = selectedLocations.length === 0 || selectedLocations.includes(m.location);
-    const matchName = selectedNames.length === 0 || selectedNames.includes(m.name);
-    const matchType = selectedTypes.length === 0 || selectedTypes.includes(m.inventoryType);
-
-    // Date range filter
-    let matchDate = true;
-    if (m.receivedDate) {
-      let itemDateStr = m.receivedDate;
-      if (/^\d{2}-\d{2}-\d{4}$/.test(itemDateStr)) {
-        const parts = itemDateStr.split('-');
-        itemDateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
-      }
-      if (itemDateStr.includes('T')) {
-        itemDateStr = itemDateStr.split('T')[0];
-      }
-      if (startDate && itemDateStr < startDate) matchDate = false;
-      if (endDate && itemDateStr > endDate) matchDate = false;
+    if (selectedCats.length === 0) return filterOptions.subCategories;
+    // Filter the subCategories based on static mapping keys
+    if (selectedCats.length === 1) {
+      const cat = selectedCats[0];
+      const staticSubCats = SUB_CATS[cat] || [];
+      return filterOptions.subCategories.filter(sc => staticSubCats.includes(sc) || !Object.values(SUB_CATS).flat().includes(sc));
     } else {
-      if (startDate || endDate) matchDate = false;
+      const allowedSub = selectedCats.map(cat => SUB_CATS[cat] || []).flat();
+      return filterOptions.subCategories.filter(sc => allowedSub.includes(sc));
     }
+  }, [filterOptions.subCategories, selectedCats]);
 
-    return matchQ && matchCat && matchSubCat && matchStatus && matchSupplier && matchColor && matchLocation && matchName && matchType && matchDate;
-  });
+  // The materials array matches the filtered + paginated dataset returned from backend
+  const filtered = materials;
+
+  const fetchAllFilteredForExport = async () => {
+    const res = await store.getMaterials({
+      search,
+      category: selectedCats.join(','),
+      subCategory: selectedSubCats.join(','),
+      status: selectedStatuses.join(','),
+      supplier: selectedSuppliers.join(','),
+      color: selectedColors.join(','),
+      location: selectedLocations.join(','),
+      name: selectedNames.join(','),
+      type: selectedTypes.join(','),
+      startDate,
+      endDate
+    });
+    return res || [];
+  };
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this material?')) return;
@@ -749,11 +809,13 @@ export default function Materials() {
   };
 
   const exportToPdf = async () => {
-    if (filtered.length === 0) {
-      alert('No data to export.');
-      return;
-    }
     try {
+      const dataToExport = await fetchAllFilteredForExport();
+      if (dataToExport.length === 0) {
+        alert('No data to export.');
+        return;
+      }
+
       const jsPDF = (await import('jspdf')).jsPDF;
       const doc = new jsPDF({
         orientation: "landscape",
@@ -787,7 +849,7 @@ export default function Materials() {
 
       doc.setTextColor(100, 100, 100);
       setFont("normal", 9);
-      doc.text(`Records: ${filtered.length} of ${materials.length} | Generated: ${new Date().toLocaleString()}`, M + 10, y + 28);
+      doc.text(`Records: ${dataToExport.length} | Generated: ${new Date().toLocaleString()}`, M + 10, y + 28);
 
       // Header underline divider
       doc.setDrawColor(226, 232, 240);
@@ -849,7 +911,7 @@ export default function Materials() {
       y += 22;
 
       // Draw data rows (Dynamic Wrap Layout)
-      filtered.forEach((item, idx) => {
+      dataToExport.forEach((item, idx) => {
         const rowVals = [
           item.code || "—",
           item.name || "—",
@@ -928,10 +990,16 @@ export default function Materials() {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
+      const dataToExport = await fetchAllFilteredForExport();
+      if (dataToExport.length === 0) {
+        alert('No data to export.');
+        return;
+      }
+
       const headers = ['Code', 'Material Name', 'Category', 'Color', 'Lot Number', 'Weight (Kg)', 'Stock (Rolls)', 'Location', 'Status'];
-      const rows = filtered.map(m => [
+      const rows = dataToExport.map(m => [
         m.code,
         m.name,
         m.category,
@@ -1099,7 +1167,7 @@ export default function Materials() {
             >
               Reset Filters
             </button>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Found <strong>{filtered.length}</strong> items</span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Found <strong>{totalCount}</strong> items</span>
           </div>
         </div>
       </div>
@@ -1183,6 +1251,87 @@ export default function Materials() {
           </table>
         </div>
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="pagination-wrap" style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: '16px',
+          padding: '12px 16px',
+          background: 'var(--surface)',
+          borderRadius: '8px',
+          border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-sm)'
+        }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+            Showing <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> to <strong>{Math.min(currentPage * itemsPerPage, totalCount)}</strong> of <strong>{totalCount}</strong> materials
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              Previous
+            </button>
+            
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => {
+              if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 2 && pageNum <= currentPage + 2)) {
+                return (
+                  <button
+                    key={pageNum}
+                    className={`btn btn-sm ${currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setCurrentPage(pageNum)}
+                    style={{
+                      minWidth: '32px',
+                      height: '32px',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: currentPage === pageNum ? 'bold' : 'normal'
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              } else if (pageNum === currentPage - 3 || pageNum === currentPage + 3) {
+                return <span key={pageNum} style={{ padding: '0 4px', color: 'var(--text-muted)' }}>...</span>;
+              }
+              return null;
+            })}
+
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              Next
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Show:</span>
+            <select
+              className="form-control"
+              value={itemsPerPage}
+              onChange={e => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              style={{ width: '80px', padding: '4px 8px', height: 'auto', fontSize: '13px' }}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <MaterialForm
