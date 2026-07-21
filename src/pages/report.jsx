@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../store.js';
+import * as XLSX from 'xlsx-js-style';
 import {
   Search, Printer, Download, ArrowLeft, AlertTriangle, CheckCircle2,
   Droplets, RefreshCw, SlidersHorizontal, Scale, ArrowUpDown
@@ -20,7 +21,7 @@ export default function DyeingShortageReport() {
     try {
       setLoading(true);
       setError(null);
-      const res = await store.getDyeingShortageReport();
+      const res = await store.getDyeingShortageReportFromSheet();
       if (res && res.success) {
         setReportData(res.data || []);
       } else {
@@ -119,33 +120,93 @@ export default function DyeingShortageReport() {
   // Export to CSV
   const handleExport = () => {
     if (!processedData.length) return;
-    const headers = [
-      'Bill Number', 'Lot Number', 'Batch Number', 'Party/Brand', 
-      'Fabric Name', 'Shade', 'Sent Rolls', 'Received Rolls', 
-      'Roll Shortage', 'Sent Weight (KG)', 'Received Weight (KG)', 
-      'Weight Shortage (KG)', 'Shortage %', 'Status'
+
+    const data = processedData.map((item, index) => ({
+      "S.No": index + 1,
+      "Bill Number": item.billNumber || '—',
+      "Lot Number": item.lotNumber || '—',
+      "Batch Number": item.batchNumber || '—',
+      "Party/Brand": item.brand || '—',
+      "Fabric Name": item.fabric || '—',
+      "Shade": item.sentShade || '—',
+      "Sent Rolls": item.sentRolls || 0,
+      "Received Rolls": item.receivedRolls || 0,
+      "Roll Shortage": item.rollDiff || 0,
+      "Sent Weight (KG)": item.sentWeight || 0,
+      "Received Weight (KG)": item.receivedWeight || 0,
+      "Weight Shortage (KG)": item.weightDiff || 0,
+      "Shortage %": `${item.shortagePct}%`,
+      "Status": item.status || '—'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    // Apply header styling
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const headerCell = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[headerCell]) {
+        ws[headerCell].s = {
+          fill: { fgColor: { rgb: "3B82F6" } }, // blue-500
+          font: { bold: true, color: { rgb: "FFFFFF" }, name: "Calibri", sz: 11 },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+    }
+
+    // Apply alignment & font colors
+    for (let r = 1; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellRef = XLSX.utils.encode_cell({ r, c });
+        if (ws[cellRef]) {
+          let align = "left";
+          if ([0, 1, 2, 3, 13, 14].includes(c)) {
+            align = "center";
+          } else if ([7, 8, 9, 10, 11, 12].includes(c)) {
+            align = "right";
+          }
+
+          ws[cellRef].s = {
+            font: { name: "Calibri", sz: 10 },
+            alignment: { horizontal: align, vertical: "center" }
+          };
+
+          // Reject color vs Approved color
+          if (c === 14) {
+            if (ws[cellRef].v === 'Reject') {
+              ws[cellRef].s.font.color = { rgb: "EF4444" };
+              ws[cellRef].s.font.bold = true;
+            } else if (ws[cellRef].v === 'Approved') {
+              ws[cellRef].s.font.color = { rgb: "10B981" };
+              ws[cellRef].s.font.bold = true;
+            }
+          }
+        }
+      }
+    }
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 6 },   // S.No
+      { wch: 15 },  // Bill Number
+      { wch: 15 },  // Lot Number
+      { wch: 15 },  // Batch Number
+      { wch: 25 },  // Party/Brand
+      { wch: 25 },  // Fabric Name
+      { wch: 15 },  // Shade
+      { wch: 12 },  // Sent Rolls
+      { wch: 15 },  // Received Rolls
+      { wch: 14 },  // Roll Shortage
+      { wch: 18 },  // Sent Weight (KG)
+      { wch: 20 },  // Received Weight (KG)
+      { wch: 20 },  // Weight Shortage (KG)
+      { wch: 12 },  // Shortage %
+      { wch: 12 }   // Status
     ];
 
-    const rows = processedData.map(item => [
-      item.billNumber, item.lotNumber, item.batchNumber, item.brand,
-      item.fabric, item.sentShade, item.sentRolls, item.receivedRolls,
-      item.rollDiff, item.sentWeight, item.receivedWeight,
-      item.weightDiff, `${item.shortagePct}%`, item.status
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(r => r.map(val => `"${val ?? ''}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Dyeing_Shortage_Report_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Shortage Report");
+    XLSX.writeFile(wb, `Dyeing_Shortage_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const handlePrint = () => {

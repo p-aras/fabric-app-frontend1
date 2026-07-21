@@ -153,7 +153,8 @@ const FabricIssued = () => {
   }, [displayedTables]);
 
   // Kharcha (accessories/expense) issuance
-  const [kharchaItems, setKharchaItems] = useState([{ id: Date.now(), item: '', weight: '' }]);
+  const [kharchaItems, setKharchaItems] = useState([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+  const [noKharcha, setNoKharcha] = useState(false);
 
   const barcodeInputRef = useRef(null);
   const scanTimeoutRef = useRef(null);
@@ -385,7 +386,8 @@ const FabricIssued = () => {
           initialTables[s.id] = defaultTable || (displayedTables[0]?.name || 'Table 1');
         });
         setShadeTableNumbers(initialTables);
-        setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
+        setKharchaItems([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+        setNoKharcha(false);
         // Reset pagination when loading new lot
         setHistoryPage(1);
         setHasMoreHistory(true);
@@ -711,7 +713,7 @@ const FabricIssued = () => {
 
   // ── Kharcha handlers ───────────────────────────────────────────────
   const addKharchaRow = () => {
-    setKharchaItems(prev => [...prev, { id: Date.now(), item: '', weight: '' }]);
+    setKharchaItems(prev => [...prev, { id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
   };
 
   const removeKharchaRow = (id) => {
@@ -724,6 +726,72 @@ const FabricIssued = () => {
 
   const getTotalKharchaWeight = () => {
     return kharchaItems.reduce((sum, r) => sum + (parseFloat(r.weight) || 0), 0);
+  };
+
+  const handleKharchaBarcodeSearch = async (rowId, barcodeVal) => {
+    const cleanBarcode = barcodeVal.replace(/[\n\r\t\s]/g, '').trim();
+    if (!cleanBarcode) return;
+
+    // Check if barcode is already scanned in this row
+    const currentRow = kharchaItems.find(r => r.id === rowId);
+    if (currentRow && currentRow.barcodes && currentRow.barcodes.some(b => b.barcodeId === cleanBarcode)) {
+      alert(`Barcode "${cleanBarcode}" has already been scanned for this item.`);
+      return;
+    }
+
+    setKharchaItems(prev => prev.map(r => r.id === rowId ? { ...r, loading: true } : r));
+
+    try {
+      console.log('🔍 Searching barcode for Kharcha:', cleanBarcode);
+      const response = await fetch(`${API_BASE_URL}/google-sheets/fabric-roll/${encodeURIComponent(cleanBarcode)}`);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || `Barcode "${cleanBarcode}" not found in inventory`);
+      }
+      const result = await response.json();
+      if (result.success && result.data) {
+        const status = (result.data['Status'] || result.data.status || 'in_stock').toLowerCase();
+        if (status === 'issued') {
+          throw new Error(`Barcode "${cleanBarcode}" has already been issued!`);
+        }
+        const weight = parseFloat(result.data['Weight (KG)'] || result.data.weight || result.data.stockKg || 0);
+        
+        setKharchaItems(prev => prev.map(r => {
+          if (r.id === rowId) {
+            const updatedBarcodes = [...(r.barcodes || []), { barcodeId: cleanBarcode, weight: weight }];
+            const totalWeight = updatedBarcodes.reduce((sum, b) => sum + b.weight, 0);
+            return {
+              ...r,
+              barcodes: updatedBarcodes,
+              weight: totalWeight.toFixed(2),
+              barcodeInput: '', // Clear input for next scan
+              loading: false
+            };
+          }
+          return r;
+        }));
+      } else {
+        throw new Error(`Barcode "${cleanBarcode}" not found in inventory`);
+      }
+    } catch (err) {
+      alert(err.message || 'Error searching barcode');
+      setKharchaItems(prev => prev.map(r => r.id === rowId ? { ...r, loading: false } : r));
+    }
+  };
+
+  const removeKharchaBarcode = (rowId, barcodeId) => {
+    setKharchaItems(prev => prev.map(r => {
+      if (r.id === rowId) {
+        const updatedBarcodes = (r.barcodes || []).filter(b => b.barcodeId !== barcodeId);
+        const totalWeight = updatedBarcodes.reduce((sum, b) => sum + b.weight, 0);
+        return {
+          ...r,
+          barcodes: updatedBarcodes,
+          weight: updatedBarcodes.length > 0 ? totalWeight.toFixed(2) : ''
+        };
+      }
+      return r;
+    }));
   };
 
   const toggleShadeSelection = (shadeId) => {
@@ -871,6 +939,16 @@ const FabricIssued = () => {
     }
 
     barcodeId = barcodeId.replace(/[\n\r\t\s]/g, '').trim();
+
+    // Check if barcode is already scanned in the current session
+    const isAlreadyScanned = Object.values(scannedBarcodes).some(barcodes => 
+      barcodes.includes(barcodeId)
+    );
+    if (isAlreadyScanned) {
+      alert(`❌ DUPLICATE SCAN REJECTED!\n\nBarcode ID: ${barcodeId}\n\nThis barcode has already been scanned in this session.`);
+      setBarcodeInput('');
+      return;
+    }
 
     console.log('🔍 Searching for Barcode ID (On-demand):', barcodeId);
 
@@ -1714,7 +1792,8 @@ const FabricIssued = () => {
       setDefaultApproverName('');
       setMatchingPassedBy('');
       setShadeTableNumbers({});
-      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
+      setKharchaItems([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+      setNoKharcha(false);
 
       // Reset pagination and reload history
       setHistoryPage(1);
@@ -1757,7 +1836,8 @@ const FabricIssued = () => {
       setDefaultApproverName('');
       setMatchingPassedBy('');
       setShadeTableNumbers({});
-      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
+      setKharchaItems([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+      setNoKharcha(false);
     }
 
     setIsSubmitting(false);
@@ -1766,13 +1846,37 @@ const FabricIssued = () => {
   const handleIssueKharcha = async () => {
     if (!selectedJob) return;
 
-    const validKharchaItems = kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '');
-    if (validKharchaItems.length === 0) {
-      alert('Please fill in at least one Kharcha item with Name or Weight');
-      return;
+    let validKharchaItems = [];
+    if (noKharcha) {
+      validKharchaItems = [{
+        item: 'No Kharcha',
+        weight: '0',
+        shade: 'N/A',
+        mode: 'manual',
+        barcodes: []
+      }];
+    } else {
+      validKharchaItems = kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '');
+      if (validKharchaItems.length === 0) {
+        alert('Please fill in at least one Kharcha item with Name or Weight, or check "No Kharcha"');
+        return;
+      }
     }
 
     setIsSubmitting(true);
+
+    const formattedKharcha = validKharchaItems.map(k => ({
+      item: k.item,
+      weight: k.weight,
+      shade: k.shade,
+      mode: k.mode || 'manual',
+      barcodes: k.barcodes?.map(b => b.barcodeId) || []
+    }));
+
+    const remarksText = noKharcha ? `Issued Kharcha: No Kharcha for this lot` : `Issued Kharcha: ${formattedKharcha.map(k => {
+      const barcodeStr = k.barcodes.length > 0 ? ` [Barcodes: ${k.barcodes.join(', ')}]` : '';
+      return `${k.item}${k.shade ? ` for shade ${k.shade}` : ''} (${k.weight} kg)${barcodeStr}`;
+    }).join(', ')}`;
 
     const issuanceRecord = {
       lotNumber: selectedJob['Lot Number'],
@@ -1786,11 +1890,11 @@ const FabricIssued = () => {
       department: loggedInUser?.department || 'Production',
       issuedAt: new Date().toISOString(),
       status: 'completed',
-      barcodeIds: [],
-      remarks: `Issued Kharcha: ${validKharchaItems.map(k => `${k.item} (${k.weight} kg)`).join(', ')}`,
+      barcodeIds: formattedKharcha.flatMap(k => k.barcodes),
+      remarks: remarksText,
       jobDetails: selectedJob,
       fabricChangeApprovals: [],
-      kharchaItems: validKharchaItems
+      kharchaItems: formattedKharcha
     };
 
     console.log('📦 Issuance Record for Kharcha:', issuanceRecord);
@@ -1831,7 +1935,8 @@ const FabricIssued = () => {
       localStorage.setItem(`fabric_issue_${selectedJob['Lot Number']}`, JSON.stringify(updatedHistory));
 
       alert(`✅ Kharcha Issued Successfully!\n\n💰 Stored ${validKharchaItems.length} accessories/expense item(s) to Google Sheets`);
-      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
+      setKharchaItems([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+      setNoKharcha(false);
 
       // Reset pagination and reload history
       setHistoryPage(1);
@@ -1859,7 +1964,8 @@ const FabricIssued = () => {
       setIssueHistory(updatedHistory);
       localStorage.setItem(`fabric_issue_${selectedJob['Lot Number']}`, JSON.stringify(updatedHistory));
 
-      setKharchaItems([{ id: Date.now(), item: '', weight: '' }]);
+      setKharchaItems([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+      setNoKharcha(false);
     }
 
     setIsSubmitting(false);
@@ -2733,25 +2839,55 @@ const FabricIssued = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: '#fff',
+                    background: 'rgba(255,255,255,0.15)',
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    userSelect: 'none'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={noKharcha}
+                      onChange={e => {
+                        setNoKharcha(e.target.checked);
+                        if (e.target.checked) {
+                          setKharchaItems([{ id: Date.now(), item: 'No Kharcha', weight: '0', shade: 'N/A', mode: 'manual', barcodeId: '', loading: false }]);
+                        } else {
+                          setKharchaItems([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+                        }
+                      }}
+                      style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#10b981' }}
+                    />
+                    No Kharcha
+                  </label>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '10px', opacity: 0.75 }}>TOTAL WEIGHT</div>
                     <div style={{ fontSize: '18px', fontWeight: '800' }}>{getTotalKharchaWeight().toFixed(2)} kg</div>
                   </div>
                   <button
                     onClick={addKharchaRow}
+                    disabled={noKharcha}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       padding: '8px 16px',
-                      background: 'rgba(255,255,255,0.18)',
-                      color: '#fff',
+                      background: noKharcha ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.18)',
+                      color: noKharcha ? 'rgba(255,255,255,0.4)' : '#fff',
                       border: '1px solid rgba(255,255,255,0.3)',
                       borderRadius: '9px',
                       fontSize: '13px', fontWeight: '700',
-                      cursor: 'pointer',
+                      cursor: noKharcha ? 'not-allowed' : 'pointer',
                       transition: 'background 0.2s'
                     }}
-                    onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.28)'}
-                    onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.18)'}
+                    onMouseOver={e => { if (!noKharcha) e.currentTarget.style.background = 'rgba(255,255,255,0.28)'; }}
+                    onMouseOut={e => { if (!noKharcha) e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; }}
                   >
                     + Add Item
                   </button>
@@ -2761,8 +2897,8 @@ const FabricIssued = () => {
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '40px 1fr 180px 44px',
-                gap: '0',
+                gridTemplateColumns: '40px 1.2fr 1.5fr 1.2fr 1.8fr 44px',
+                gap: '8px',
                 padding: '10px 22px',
                 background: '#f8fafc',
                 borderBottom: '1px solid #e2e8f0',
@@ -2770,22 +2906,42 @@ const FabricIssued = () => {
                 fontWeight: '700',
                 color: '#64748b',
                 letterSpacing: '0.5px',
-                textTransform: 'uppercase'
+                textTransform: 'uppercase',
+                opacity: noKharcha ? 0.5 : 1
               }}>
                 <div>#</div>
+                <div>Select Shade</div>
                 <div>Item Name</div>
-                <div>Weight (kg)</div>
+                <div>Entry Mode</div>
+                <div>Weight (KG) / Barcode ID</div>
                 <div></div>
               </div>
 
               {/* Rows */}
               <div style={{ padding: '10px 22px 16px' }}>
-                {kharchaItems.map((row, idx) => (
+                {noKharcha ? (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '30px',
+                    background: '#f8fafc',
+                    borderRadius: '12px',
+                    border: '1.5px dashed #cbd5e1',
+                    color: '#64748b',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    gap: '8px'
+                  }}>
+                    <span>🚫</span> No Kharcha items to issue for this lot. Ready to submit.
+                  </div>
+                ) : (
+                  kharchaItems.map((row, idx) => (
                   <div
                     key={row.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '40px 1fr 180px 44px',
+                      gridTemplateColumns: '40px 1.2fr 1.5fr 1.2fr 1.8fr 44px',
                       gap: '8px',
                       alignItems: 'center',
                       marginBottom: '8px',
@@ -2803,10 +2959,33 @@ const FabricIssued = () => {
                       fontSize: '12px', fontWeight: '700'
                     }}>{idx + 1}</div>
 
+                    {/* Shade selection */}
+                    <select
+                      value={row.shade}
+                      onChange={e => updateKharchaRow(row.id, 'shade', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 13px',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: '9px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        outline: 'none',
+                        background: '#fff',
+                        color: '#1e293b',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+                      <option value="">Select Shade</option>
+                      {getShadesWithIds(selectedJob['Shade']).map(s => (
+                        <option key={s.id} value={s.name}>{s.name}</option>
+                      ))}
+                    </select>
+
                     {/* Item Name */}
                     <input
                       type="text"
-                      placeholder="Enter item name (e.g. Thread, Button, Zip...)"
+                      placeholder="Item name (Thread, Elastic...)"
                       value={row.item}
                       onChange={e => updateKharchaRow(row.id, 'item', e.target.value)}
                       style={{
@@ -2817,39 +2996,165 @@ const FabricIssued = () => {
                         fontSize: '13px',
                         fontWeight: '500',
                         outline: 'none',
-                        transition: 'border-color 0.2s, box-shadow 0.2s',
                         background: '#fff',
                         color: '#1e293b',
                         boxSizing: 'border-box'
                       }}
-                      onFocus={e => { e.target.style.borderColor = '#5f3dc4'; e.target.style.boxShadow = '0 0 0 3px rgba(95,61,196,0.12)'; }}
-                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
                     />
 
-                    {/* Weight */}
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                      value={row.weight}
-                      onChange={e => updateKharchaRow(row.id, 'weight', e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '9px 13px',
-                        border: '1.5px solid #e2e8f0',
-                        borderRadius: '9px',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        outline: 'none',
-                        transition: 'border-color 0.2s, box-shadow 0.2s',
-                        background: '#fff',
-                        color: '#1e293b',
-                        boxSizing: 'border-box'
-                      }}
-                      onFocus={e => { e.target.style.borderColor = '#5f3dc4'; e.target.style.boxShadow = '0 0 0 3px rgba(95,61,196,0.12)'; }}
-                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
-                    />
+                    {/* Mode selector */}
+                    <div style={{ display: 'flex', border: '1.5px solid #e2e8f0', borderRadius: '9px', overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateKharchaRow(row.id, 'mode', 'manual');
+                          updateKharchaRow(row.id, 'barcodeId', '');
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: row.mode === 'manual' ? '#5f3dc4' : '#fff',
+                          color: row.mode === 'manual' ? '#fff' : '#475569',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        Manual
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateKharchaRow(row.id, 'mode', 'barcode')}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: row.mode === 'barcode' ? '#5f3dc4' : '#fff',
+                          color: row.mode === 'barcode' ? '#fff' : '#475569',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        Scan
+                      </button>
+                    </div>
+
+                    {/* Weight or Barcode input */}
+                    <div>
+                      {row.mode === 'manual' ? (
+                        <input
+                          type="number"
+                          placeholder="0.00"
+                          min="0"
+                          step="0.01"
+                          value={row.weight}
+                          onChange={e => updateKharchaRow(row.id, 'weight', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '9px 13px',
+                            border: '1.5px solid #e2e8f0',
+                            borderRadius: '9px',
+                            fontSize: '13px',
+                            fontWeight: '600',
+                            outline: 'none',
+                            background: '#fff',
+                            color: '#1e293b',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                          <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                            <input
+                              type="text"
+                              placeholder="Barcode ID"
+                              value={row.barcodeInput || ''}
+                              onChange={e => updateKharchaRow(row.id, 'barcodeInput', e.target.value)}
+                              onKeyPress={e => {
+                                if (e.key === 'Enter' && row.barcodeInput) {
+                                  e.preventDefault();
+                                  handleKharchaBarcodeSearch(row.id, row.barcodeInput);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '9px 13px',
+                                border: '1.5px solid #e2e8f0',
+                                borderRadius: '9px',
+                                fontSize: '13px',
+                                outline: 'none',
+                                background: '#fff',
+                                color: '#1e293b',
+                                boxSizing: 'border-box'
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleKharchaBarcodeSearch(row.id, row.barcodeInput)}
+                              disabled={row.loading}
+                              style={{
+                                padding: '8px 10px',
+                                background: '#0b7285',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '9px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {row.loading ? '...' : 'Verify'}
+                            </button>
+                          </div>
+                          {row.barcodes && row.barcodes.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                              {row.barcodes.map(b => (
+                                <span
+                                  key={b.barcodeId}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: '#e0f2fe',
+                                    color: '#0369a1',
+                                    padding: '3px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                    fontWeight: '700'
+                                  }}
+                                >
+                                  🏷️ {b.barcodeId} ({b.weight.toFixed(2)} kg)
+                                  <button
+                                    type="button"
+                                    onClick={() => removeKharchaBarcode(row.id, b.barcodeId)}
+                                    style={{
+                                      border: 'none',
+                                      background: 'transparent',
+                                      color: '#0284c7',
+                                      cursor: 'pointer',
+                                      fontSize: '11px',
+                                      padding: '0 0 0 2px',
+                                      fontWeight: '800'
+                                    }}
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {row.weight && (
+                            <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 'bold', marginLeft: '4px' }}>
+                              ⚖️ Total Weight: {row.weight} kg
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {/* Remove */}
                     <button
@@ -2874,8 +3179,9 @@ const FabricIssued = () => {
                       ✕
                     </button>
                   </div>
-                ))}
-              </div>
+                ))
+              )}
+            </div>
 
               {/* Footer summary */}
               <div style={{

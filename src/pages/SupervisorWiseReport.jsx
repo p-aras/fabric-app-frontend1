@@ -28,9 +28,32 @@ export default function SupervisorWiseReport() {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const response = await store.getSupervisorIssuanceReport(startDate, endDate);
+      // Fetch table supervisor mapping and issuance report concurrently
+      const [tablesRes, response] = await Promise.all([
+        store.getTables(),
+        store.getSupervisorIssuanceReport(startDate, endDate)
+      ]);
+
+      const tableSupervisorMap = {};
+      if (tablesRes && tablesRes.success) {
+        (tablesRes.data || []).forEach(t => {
+          if (t.name && t.Supervisor && t.Supervisor.name) {
+            tableSupervisorMap[String(t.name).trim().toLowerCase()] = t.Supervisor.name;
+          }
+        });
+      }
+
       if (response && response.success) {
-        setReportData(response.data || []);
+        const rawData = response.data || [];
+        const mappedData = rawData.map(item => {
+          const tblKey = String(item.tableNumber || '').trim().toLowerCase();
+          const assignedSupervisor = tableSupervisorMap[tblKey];
+          return {
+            ...item,
+            supervisor: assignedSupervisor || item.supervisor || 'Unassigned'
+          };
+        });
+        setReportData(mappedData);
       } else {
         setReportData([]);
       }

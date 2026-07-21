@@ -314,15 +314,46 @@ function convertValuesToObjects(values) {
 
 function parseDateString(dateStr) {
   if (!dateStr) return null;
-  const parts = dateStr.split(" ");
+  
+  // Try parsing directly (e.g. YYYY-MM-DD or ISO string)
+  const directDate = new Date(dateStr);
+  if (!isNaN(directDate.getTime())) {
+    return directDate;
+  }
+
+  // Fallback split parsing
+  const parts = String(dateStr).trim().split(/[-/\s]+/);
   if (parts.length === 3) {
-    const day = parseInt(parts[0], 10);
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const month = monthNames.indexOf(parts[1]);
-    const year = parseInt(parts[2], 10);
-    if (!isNaN(day) && month !== -1 && !isNaN(year)) {
-      return new Date(year, month, day);
+    
+    // Check if parts[1] is a text month
+    let month = monthNames.indexOf(parts[1]);
+    
+    if (month !== -1) {
+      let day = parseInt(parts[0], 10);
+      let year = parseInt(parts[2], 10);
+      if (parts[0].length === 4) {
+        year = parseInt(parts[0], 10);
+        day = parseInt(parts[2], 10);
+      }
+      if (!isNaN(day) && !isNaN(year)) {
+        return new Date(year, month, day);
+      }
+    }
+
+    // Try parsing numeric values
+    const n1 = parseInt(parts[0], 10);
+    const n2 = parseInt(parts[1], 10);
+    const n3 = parseInt(parts[2], 10);
+    if (!isNaN(n1) && !isNaN(n2) && !isNaN(n3)) {
+      if (parts[0].length === 4) {
+        // YYYY-MM-DD or YYYY/MM/DD
+        return new Date(n1, n2 - 1, n3);
+      } else {
+        // DD-MM-YYYY or DD/MM/YYYY
+        return new Date(n3, n2 - 1, n1);
+      }
     }
   }
   return null;
@@ -458,6 +489,10 @@ export default function JobOrder() {
   const [selectedSubmittedBy, setSelectedSubmittedBy] = useState('All');
   const [onlyUncut, setOnlyUncut] = useState(true);
   const [cuttingStatusFilter, setCuttingStatusFilter] = useState('All');
+  
+  // Date Range Filter States for Master List
+  const [masterStartDate, setMasterStartDate] = useState('');
+  const [masterEndDate, setMasterEndDate] = useState('');
 
   // Get logged-in user context
   const [currentUser, setCurrentUser] = useState(() => {
@@ -776,9 +811,31 @@ export default function JobOrder() {
         }
       }
 
+      // Apply master date range filter
+      if (masterStartDate || masterEndDate) {
+        const dateValue = jo['Date'];
+        const parsedDate = parseDateString(dateValue);
+        if (parsedDate) {
+          if (masterStartDate) {
+            const start = new Date(masterStartDate);
+            start.setHours(0, 0, 0, 0);
+            parsedDate.setHours(0, 0, 0, 0);
+            if (parsedDate < start) return false;
+          }
+          if (masterEndDate) {
+            const end = new Date(masterEndDate);
+            end.setHours(23, 59, 59, 999);
+            parsedDate.setHours(0, 0, 0, 0);
+            if (parsedDate > end) return false;
+          }
+        } else {
+          return false;
+        }
+      }
+
       return matchQ && matchBrand && matchStatus && matchSeason && matchFabric && matchParty && matchGarment && matchSection && matchSubmittedBy;
     });
-  }, [supervisorFilteredJobOrders, search, selectedBrand, selectedStatus, selectedSeason, selectedFabric, selectedParty, selectedGarment, selectedSection, selectedSubmittedBy, onlyUncut, cuttingMapByLot, cuttingStatusFilter, issuedLots]);
+  }, [supervisorFilteredJobOrders, search, selectedBrand, selectedStatus, selectedSeason, selectedFabric, selectedParty, selectedGarment, selectedSection, selectedSubmittedBy, onlyUncut, cuttingMapByLot, cuttingStatusFilter, issuedLots, masterStartDate, masterEndDate]);
 
   const paginated = useMemo(() => {
     const start = (page - 1) * limit;
@@ -789,7 +846,7 @@ export default function JobOrder() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, selectedBrand, selectedStatus, selectedSeason, selectedFabric, selectedParty, selectedGarment, selectedSection, selectedSubmittedBy]);
+  }, [search, selectedBrand, selectedStatus, selectedSeason, selectedFabric, selectedParty, selectedGarment, selectedSection, selectedSubmittedBy, masterStartDate, masterEndDate]);
 
   // ==========================================
   // CUTTING TAB MEMOS & FILTERING
@@ -2599,7 +2656,7 @@ export default function JobOrder() {
                   <FileText size={15} /> Export PDF
                 </button>
 
-                {(selectedBrand !== 'All' || selectedStatus !== 'All' || selectedSeason !== 'All' || selectedFabric !== 'All' || selectedParty !== 'All' || selectedGarment !== 'All' || selectedSection !== 'All' || selectedSubmittedBy !== 'All' || search || !onlyUncut || cuttingStatusFilter !== 'All') && (
+                {(selectedBrand !== 'All' || selectedStatus !== 'All' || selectedSeason !== 'All' || selectedFabric !== 'All' || selectedParty !== 'All' || selectedGarment !== 'All' || selectedSection !== 'All' || selectedSubmittedBy !== 'All' || search || !onlyUncut || cuttingStatusFilter !== 'All' || masterStartDate || masterEndDate) && (
                   <button
                     type="button"
                     className="btn btn-ghost"
@@ -2615,6 +2672,8 @@ export default function JobOrder() {
                       setSelectedSubmittedBy('All');
                       setOnlyUncut(true);
                       setCuttingStatusFilter('All');
+                      setMasterStartDate('');
+                      setMasterEndDate('');
                     }}
                     style={{ height: '42px', color: 'var(--danger)', fontWeight: 600 }}
                   >
@@ -2689,6 +2748,14 @@ export default function JobOrder() {
                       <option value="All">All Statuses</option>
                       {statuses.filter(s => s !== 'All').map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6, textTransform: 'uppercase' }}>Start Date</label>
+                    <input type="date" className="form-control" value={masterStartDate} onChange={e => setMasterStartDate(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '6px' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6, textTransform: 'uppercase' }}>End Date</label>
+                    <input type="date" className="form-control" value={masterEndDate} onChange={e => setMasterEndDate(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '6px' }} />
                   </div>
                 </div>
               </div>

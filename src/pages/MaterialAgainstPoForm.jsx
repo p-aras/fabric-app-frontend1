@@ -197,7 +197,7 @@ const MaterialAgainstPoForm = () => {
     try {
       const ctrl = new AbortController();
       const timeoutId = setTimeout(() => ctrl.abort(), 4000);
-      const res = await fetch(`${BASE_URL}/stats`, { signal: ctrl.signal });
+      const res = await fetch(`${BASE_URL}/health`, { signal: ctrl.signal });
       clearTimeout(timeoutId);
       if (res.ok) {
         setIsOnline(true);

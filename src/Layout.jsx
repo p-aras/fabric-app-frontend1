@@ -6,7 +6,7 @@ import {
   ArrowLeftRight, BarChart3, Settings, ChevronDown,
   Search, Bell, Sun, Moon, Menu, LogOut, ChevronRight,
   Printer, Sparkles, Droplets, Grid, History, AlertCircle,
-  Layers, Ruler, Scissors, FileText, Database
+  Layers, Ruler, Scissors, FileText, Database, ClipboardList
 } from 'lucide-react';
 
 const NAV = [
@@ -52,6 +52,7 @@ const NAV = [
         label: 'Daily Report Cutting',
         icon: Scissors,
         children: [
+          { path: '/reports/daily-cutting-report', label: 'Daily Cutting Report' },
           { path: '/reports/daily-cutting/cutter-master', label: 'Cutter Master Wise' },
           { path: '/reports/daily-cutting/supervisor', label: 'Supervisor Wise' },
           { path: '/reports/daily-cutting/hall', label: 'Hall Wise' },
@@ -60,6 +61,7 @@ const NAV = [
       }
     ]
   },
+  { path: '/attendance', icon: ClipboardList, label: 'Attendance System' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 

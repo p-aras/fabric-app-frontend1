@@ -671,6 +671,8 @@ export default function Materials() {
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [barcodeSeries, setBarcodeSeries] = useState('All'); // 'All', '9', 'MAT', 'DYE', 'Plain'
+  const [skipReAdd, setSkipReAdd] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editMat, setEditMat] = useState(null);
@@ -697,7 +699,8 @@ export default function Materials() {
       name: selectedNames.join(','),
       type: selectedTypes.join(','),
       startDate,
-      endDate
+      endDate,
+      barcodeSeries
     }).then(res => {
       if (res && res.success) {
         setMaterials(res.data || []);
@@ -732,7 +735,8 @@ export default function Materials() {
     selectedNames,
     selectedTypes,
     startDate,
-    endDate
+    endDate,
+    barcodeSeries
   ]);
 
   // Reset to page 1 when search or any filters change
@@ -749,7 +753,8 @@ export default function Materials() {
     selectedNames,
     selectedTypes,
     startDate,
-    endDate
+    endDate,
+    barcodeSeries
   ]);
 
   // Reset subcategory when categories selection changes
@@ -779,7 +784,10 @@ export default function Materials() {
   }, [filterOptions.subCategories, selectedCats]);
 
   // The materials array matches the filtered + paginated dataset returned from backend
-  const filtered = materials;
+  const filtered = useMemo(() => {
+    if (!skipReAdd) return materials;
+    return materials.filter(m => !String(m.code || '').startsWith('9'));
+  }, [materials, skipReAdd]);
 
   const fetchAllFilteredForExport = async () => {
     const res = await store.getMaterials({
@@ -793,7 +801,8 @@ export default function Materials() {
       name: selectedNames.join(','),
       type: selectedTypes.join(','),
       startDate,
-      endDate
+      endDate,
+      barcodeSeries
     });
     return res || [];
   };
@@ -1193,6 +1202,82 @@ export default function Materials() {
           </div>
         </div>
       </div> */}
+
+      {/* Barcode Series and Custom Filters Row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: '16px' }}>
+        {/* Barcode Series Segregation Tabs */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 8,
+          background: 'var(--surface)',
+          padding: '8px 14px',
+          borderRadius: '10px',
+          border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-sm)',
+          width: 'fit-content'
+        }}>
+          <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', marginRight: 8, letterSpacing: '0.05em' }}>
+            Barcode Series:
+          </span>
+          {[
+            { key: 'All', label: 'All Barcodes' },
+            { key: '9', label: 'Series 9 (Re-Added)' },
+            { key: 'MAT', label: 'Series MAT (Regular)' },
+            { key: 'DYE', label: 'Series DYE (Dyeing)' },
+            { key: 'Plain', label: 'Plain Numeric Series' }
+          ].map(tab => {
+            const isActive = barcodeSeries === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setBarcodeSeries(tab.key)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  border: '1px solid ' + (isActive ? 'var(--primary)' : 'var(--border)'),
+                  background: isActive ? 'var(--primary)' : 'transparent',
+                  color: isActive ? '#ffffff' : 'var(--text-primary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Skip Re-add Lots Filter */}
+        <label style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          cursor: 'pointer',
+          fontSize: '12px',
+          fontWeight: 700,
+          color: 'var(--text-primary)',
+          background: 'var(--surface)',
+          padding: '9px 14px',
+          borderRadius: '10px',
+          border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-sm)',
+          userSelect: 'none',
+          height: '40px',
+          boxSizing: 'border-box'
+        }}>
+          <input
+            type="checkbox"
+            checked={skipReAdd}
+            onChange={e => setSkipReAdd(e.target.checked)}
+            style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: 'var(--primary)' }}
+          />
+          Skip Re-Add Lots
+        </label>
+      </div>
 
       {/* Table */}
       <div className="old-inventory-card">

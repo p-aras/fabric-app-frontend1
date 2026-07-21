@@ -103,19 +103,11 @@ export const store = {
   // --- MATERIALS ---
   getMaterials: async (filters = {}) => {
     const params = new URLSearchParams();
-    if (filters.page) params.append('page', filters.page);
-    if (filters.limit) params.append('limit', filters.limit);
-    if (filters.search) params.append('search', filters.search);
-    if (filters.category) params.append('category', filters.category);
-    if (filters.subCategory) params.append('subCategory', filters.subCategory);
-    if (filters.status) params.append('status', filters.status);
-    if (filters.type) params.append('type', filters.type);
-    if (filters.location) params.append('location', filters.location);
-    if (filters.supplier) params.append('supplier', filters.supplier);
-    if (filters.color) params.append('color', filters.color);
-    if (filters.name) params.append('name', filters.name);
-    if (filters.startDate) params.append('startDate', filters.startDate);
-    if (filters.endDate) params.append('endDate', filters.endDate);
+    Object.entries(filters).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        params.append(key, val);
+      }
+    });
     
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return fetch(`${BASE_URL}/materials${queryString}`, {
@@ -412,6 +404,13 @@ export const store = {
     }).then(handleResponse);
   },
 
+  getDailyCuttingCompletedReport: async (refresh = false) => {
+    return fetch(`${BASE_URL}/reports/daily-cutting-completed?refresh=${refresh}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
   getDailyInventoryReport: async (date = '') => {
     return fetch(`${BASE_URL}/reports/daily-inventory-quantity?date=${encodeURIComponent(date)}`, {
       method: 'GET',
@@ -484,10 +483,69 @@ export const store = {
     }).then(handleResponse);
   },
 
+  createQuickUser: async (userData) => {
+    return fetch(`${BASE_URL}/auth/users`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData),
+    }).then(handleResponse);
+  },
+
   getDyeingShortageReport: async () => {
     return fetch(`${BASE_URL}/reports/dyeing-shortage`, {
       method: 'GET',
       headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  getDyeingShortageReportFromSheet: async () => {
+    return fetch(`${BASE_URL}/reports/dyeing-shortage-sheet`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
+  saveAttendance: async (data) => {
+    return fetch(`${BASE_URL}/attendance`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    }).then(handleResponse);
+  },
+
+  getAttendance: async (date = '') => {
+    return fetch(`${BASE_URL}/attendance?date=${encodeURIComponent(date)}`, {
+      method: 'GET',
+      headers: getHeaders()
+    }).then(handleResponse);
+  },
+
+  deleteAttendance: async (id) => {
+    return fetch(`${BASE_URL}/attendance/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse);
+  },
+
+  getStaff: async () => {
+    return fetch(`${BASE_URL}/staff`, {
+      method: 'GET',
+      headers: getHeaders()
+    }).then(handleResponse);
+  },
+
+  addStaff: async (data) => {
+    return fetch(`${BASE_URL}/staff`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    }).then(handleResponse);
+  },
+
+  deleteStaff: async (id) => {
+    return fetch(`${BASE_URL}/staff/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
     }).then(handleResponse);
   }
 };

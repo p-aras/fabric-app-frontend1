@@ -265,12 +265,73 @@ export default function DailyFabricIssueReport() {
     XLSX.writeFile(wb, `Daily_Fabric_Issue_Summary_${startDate}_to_${endDate}.xlsx`);
   };
 
+  const getTodayAttendanceText = async () => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let hodsPresent = 0;
+    let supervisorsPresent = 0;
+    let helpersPresent = 0;
+    const absentees = [];
+
+    const safeParseJSON = (val) => {
+      if (!val) return [];
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch (e) { return []; }
+    };
+
+    try {
+      const attRes = await store.getAttendance(todayStr);
+      if (attRes && attRes.success && attRes.data) {
+        attRes.data.forEach(record => {
+          const recordHods = safeParseJSON(record.hods);
+          const recordSups = safeParseJSON(record.supervisors);
+          const recordHelpers = safeParseJSON(record.helpers);
+
+          recordHods.forEach(h => {
+            if (h.status === 'Present' || h.status === 'Half Day') {
+              hodsPresent++;
+            } else if (h.status === 'Absent') {
+              absentees.push(`${h.name} (HOD)`);
+            }
+          });
+
+          recordSups.forEach(s => {
+            if (s.status === 'Present' || s.status === 'Half Day') {
+              supervisorsPresent++;
+            } else if (s.status === 'Absent') {
+              absentees.push(`${s.name} (Supervisor)`);
+            }
+          });
+
+          recordHelpers.forEach(hp => {
+            if (hp.status === 'Present' || hp.status === 'Half Day') {
+              helpersPresent++;
+            } else if (hp.status === 'Absent') {
+              absentees.push(`${hp.name} (Helper)`);
+            }
+          });
+        });
+      }
+    } catch (e) {
+      console.error("Failed to load today's attendance for PDF:", e);
+    }
+
+    const uniqueAbsentees = [...new Set(absentees)];
+
+    return {
+      summary: `HODs Present: ${hodsPresent} | Supervisors Present: ${supervisorsPresent} | Helpers Present: ${helpersPresent}`,
+      absenteesText: uniqueAbsentees.length > 0 ? `Absentees: ${uniqueAbsentees.join(', ')}` : "Absentees: None"
+    };
+  };
+
   // PDF exporter (Grayscale / Professional Layout)
-  const exportToPdf = () => {
+  const exportToPdf = async () => {
     if (filteredData.length === 0) {
       alert("No data available to export.");
       return;
     }
+
+    // Fetch today's attendance
+    const attData = await getTodayAttendanceText();
 
     const doc = new jsPDF({
       orientation: "portrait",
@@ -281,30 +342,37 @@ export default function DailyFabricIssueReport() {
     const PAGE_W = doc.internal.pageSize.getWidth();
     const PAGE_H = doc.internal.pageSize.getHeight();
     const M = 40; // Margin
-    let y = 50;
+    let y = 35;
 
     const setFont = (style, size) => {
       doc.setFont("helvetica", style);
       doc.setFontSize(size);
     };
 
-    // Header Title
-    setFont("bold", 15);
+    // Left Side - Header Title
+    setFont("bold", 14);
     doc.setTextColor(15, 23, 42); // slate-900
-    doc.text("DAILY FABRIC ISSUANCE ANALYSIS", M, y);
-    y += 18;
+    doc.text("DAILY FABRIC ISSUANCE ANALYSIS", M, y + 15);
 
-    // Date range
-    setFont("normal", 9);
+    setFont("normal", 8.5);
     doc.setTextColor(100, 116, 139); // slate-500
-    doc.text(`Reporting Period: ${startDate} to ${endDate}  |  Generated: ${new Date().toLocaleDateString()}`, M, y);
-    y += 15;
+    doc.text(`Period: ${startDate} to ${endDate}  |  Generated: ${new Date().toLocaleDateString()}`, M, y + 28);
 
-    // Elegant thin black separator line
+    // Right Side - Today's Attendance Block
+    doc.setTextColor(15, 23, 42);
+    setFont("bold", 8);
+    doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 230, y + 10);
+    setFont("normal", 7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(attData.summary, PAGE_W - M - 230, y + 21);
+    doc.text(attData.absenteesText, PAGE_W - M - 230, y + 31);
+
+    // Divider Line
     doc.setDrawColor(15, 23, 42);
     doc.setLineWidth(1);
-    doc.line(M, y, PAGE_W - M, y);
-    y += 20;
+    doc.line(M, y + 39, PAGE_W - M, y + 39);
+
+    y += 54;
 
     // Grayscale Summary Box
     doc.setDrawColor(226, 232, 240); // slate-200
@@ -375,7 +443,20 @@ export default function DailyFabricIssueReport() {
       doc.line(M, y, M + tTotalW, y);
     });
 
-    // Table bottom border
+    // Total Row Table 1
+    const tTotalRolls = tableSummary.reduce((sum, item) => sum + item.rolls, 0);
+    const tTotalWeight = tableSummary.reduce((sum, item) => sum + item.weight, 0);
+
+    setFont("bold", 8.5);
+    doc.setTextColor(15, 23, 42);
+    let rx = M;
+    doc.text("Total", rx + 10, y + 11); rx += tColWidths[0];
+    doc.text("", rx + 10, y + 11); rx += tColWidths[1];
+    doc.text(String(tTotalRolls), rx + tColWidths[2] - 10, y + 11, { align: "right" }); rx += tColWidths[2];
+    doc.text(tTotalWeight.toFixed(1), rx + tColWidths[3] - 10, y + 11, { align: "right" }); rx += tColWidths[3];
+    doc.text("100%", rx + tColWidths[4] - 10, y + 11, { align: "right" });
+
+    y += 16;
     doc.setDrawColor(15, 23, 42);
     doc.setLineWidth(1);
     doc.line(M, y, M + tTotalW, y);
@@ -456,7 +537,20 @@ export default function DailyFabricIssueReport() {
       doc.line(M, y, M + fTotalW, y);
     });
 
-    // Table bottom border
+    // Total Row Table 2
+    const fTotalRolls = fabricSummary.reduce((sum, item) => sum + item.rolls, 0);
+    const fTotalWeight = fabricSummary.reduce((sum, item) => sum + item.weight, 0);
+
+    setFont("bold", 8.5);
+    doc.setTextColor(15, 23, 42);
+    let frx = M;
+    doc.text("Total", frx + 10, y + 11); frx += fColWidths[0];
+    doc.text("", frx + 10, y + 11); frx += fColWidths[1];
+    doc.text(String(fTotalRolls), frx + fColWidths[2] - 10, y + 11, { align: "right" }); frx += fColWidths[2];
+    doc.text(fTotalWeight.toFixed(1), frx + fColWidths[3] - 10, y + 11, { align: "right" }); frx += fColWidths[3];
+    doc.text("100%", frx + fColWidths[4] - 10, y + 11, { align: "right" });
+
+    y += 16;
     doc.setDrawColor(15, 23, 42);
     doc.setLineWidth(1);
     doc.line(M, y, M + fTotalW, y);

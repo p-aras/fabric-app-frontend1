@@ -20,6 +20,12 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
   const [remainingWeight, setRemainingWeight] = useState(null);
   const [activeTab, setActiveTab] = useState('individual');
 
+  // Kharcha states
+  const [issuedKharcha, setIssuedKharcha] = useState([]);
+  const [selectedKharcha, setSelectedKharcha] = useState(null);
+  const [kharchaReturnWeight, setKharchaReturnWeight] = useState('');
+  const [kharchaReturnReason, setKharchaReturnReason] = useState('Returned');
+
   // State for sticker generator
   const [showStickerGenerator, setShowStickerGenerator] = useState(false);
   const [currentReturnData, setCurrentReturnData] = useState(null);
@@ -69,7 +75,8 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
 
         setIssuedRolls(transformedRolls);
         setRollsByShade(rollsByShadeMap);
-        console.log(`✅ Loaded ${transformedRolls.length} issued rolls across ${Object.keys(rollsByShadeMap).length} shades`);
+        setIssuedKharcha(resData.kharcha || []);
+        console.log(`✅ Loaded ${transformedRolls.length} issued rolls and ${resData.kharcha?.length || 0} kharcha items`);
 
         transformedRolls.forEach(roll => {
           console.log(`   ${roll.barcodeId}: Issued=${roll.originalIssuedWeight}KG, Returned=${roll.totalReturnedWeight}KG, Available=${roll.availableToReturn}KG, Used=${roll.fabricUsedForCutting}KG, Party=${roll.cmfName || roll.party || 'N/A'}`);
@@ -109,6 +116,78 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
     setReason('Returned');
     setManualBarcode('');
     setRemainingWeight(maxReturnable);
+  };
+
+  const handleSelectKharcha = (kh) => {
+    setSelectedKharcha(kh);
+    setKharchaReturnWeight(kh.availableToReturn.toString());
+    setKharchaReturnReason('Returned');
+  };
+
+  const handleKharchaReturn = async () => {
+    if (!selectedKharcha) {
+      alert("Please select a Kharcha item first.");
+      return;
+    }
+    const returnWeightVal = parseFloat(kharchaReturnWeight);
+    if (!returnWeightVal || returnWeightVal <= 0) {
+      alert("Please enter a valid weight to return.");
+      return;
+    }
+    if (returnWeightVal > selectedKharcha.availableToReturn) {
+      alert(`Return weight (${returnWeightVal} KG) exceeds available weight (${selectedKharcha.availableToReturn.toFixed(2)} KG).`);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const receivingRecord = {
+        lotNumber: selectedJob['Lot Number'],
+        fabricName: `Kharcha - ${selectedKharcha.item}`,
+        cmfName: 'Accessories Dept',
+        party: 'Accessories Dept',
+        shade: 'N/A',
+        barcodeId: `KHARCHA-${selectedKharcha.item}`,
+        originalBarcodeId: `KHARCHA-${selectedKharcha.item}`,
+        returnedWeight: returnWeightVal,
+        weight: returnWeightVal,
+        returnQuantity: 1,
+        reason: kharchaReturnReason,
+        receivedBy: 'Production Manager',
+        receivedAt: new Date().toISOString(),
+        returnDate: new Date().toISOString(),
+        originalIssuedWeight: selectedKharcha.originalWeight,
+        totalReturnedWeight: selectedKharcha.totalReturnedWeight
+      };
+
+      const response = await fetch(`${API_BASE_URL}/store-fabric-receiving`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(receivingRecord)
+      });
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      const resData = await response.json();
+
+      if (resData.success) {
+        alert(`✅ Successfully returned ${returnWeightVal.toFixed(2)} KG of ${selectedKharcha.item}`);
+        if (onReceiveComplete) onReceiveComplete(receivingRecord);
+        
+        // Show return sticker generator for the returned Kharcha
+        setCurrentReturnData(receivingRecord);
+        setShowStickerGenerator(true);
+
+        setKharchaReturnWeight('');
+        setSelectedKharcha(null);
+        await loadIssuedRolls();
+      } else {
+        alert('Failed to save return: ' + resData.message);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error saving Kharcha return: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleShadeReturn = async (shade) => {
@@ -651,6 +730,21 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                 ✏️ Manual Entry
               </button>
               <button
+                onClick={() => setActiveTab('kharcha')}
+                style={{
+                  padding: '10px 24px',
+                  background: activeTab === 'kharcha' ? '#667eea' : 'transparent',
+                  color: activeTab === 'kharcha' ? 'white' : '#666',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
+                }}
+              >
+                💰 Kharcha Return
+              </button>
+              <button
                 onClick={() => setActiveTab('history')}
                 style={{
                   padding: '10px 24px',
@@ -1082,6 +1176,123 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Tab 3.5: Kharcha Return */}
+              {activeTab === 'kharcha' && (
+                <div className="kharcha-return-section" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '300px' }}>
+                    <h4 style={{ margin: '0 0 16px 0', color: '#333' }}>💰 Issued Kharcha Items</h4>
+                    {issuedKharcha.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '40px', background: '#f9f9f9', borderRadius: '8px' }}>
+                        <p>No issued Kharcha items found for this lot.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '500px', overflowY: 'auto' }}>
+                        {issuedKharcha.map((kh, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => handleSelectKharcha(kh)}
+                            style={{
+                              padding: '16px',
+                              background: selectedKharcha?.item === kh.item ? '#e8f5e9' : 'white',
+                              border: selectedKharcha?.item === kh.item ? '2px solid #4caf50' : '1px solid #e0e0e0',
+                              borderRadius: '10px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                              <strong style={{ fontSize: '16px', color: '#333' }}>👜 {kh.item}</strong>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                background: kh.availableToReturn > 0 ? '#fff3e0' : '#e8f5e9',
+                                color: kh.availableToReturn > 0 ? '#f57c00' : '#4caf50'
+                              }}>
+                                {kh.availableToReturn > 0 ? 'Active' : 'Returned'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', fontSize: '13px', color: '#666' }}>
+                              <span>📦 Original: {kh.originalWeight.toFixed(2)} kg</span>
+                              <span>📥 Returned: {kh.totalReturnedWeight.toFixed(2)} kg</span>
+                              <span style={{ color: '#f57c00', fontWeight: 'bold' }}>🔄 Available: {kh.availableToReturn.toFixed(2)} kg</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedKharcha && (
+                    <div style={{
+                      flex: '0 0 350px',
+                      background: '#f9f9f9',
+                      padding: '24px',
+                      borderRadius: '16px',
+                      border: '1px solid #e2e8f0',
+                      alignSelf: 'flex-start'
+                    }}>
+                      <h4 style={{ margin: '0 0 16px 0', color: '#333' }}>🔄 Return Kharcha</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div>
+                          <span style={{ fontSize: '13px', color: '#666' }}>Selected Item:</span>
+                          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#333', marginTop: '4px' }}>
+                            {selectedKharcha.item}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', color: '#666', marginBottom: '6px' }}>
+                            Return Weight (KG)
+                          </label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={kharchaReturnWeight}
+                            onChange={e => setKharchaReturnWeight(e.target.value)}
+                            max={selectedKharcha.availableToReturn}
+                            min="0.01"
+                            step="0.01"
+                            style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', color: '#666', marginBottom: '6px' }}>
+                            Reason / Remarks
+                          </label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={kharchaReturnReason}
+                            onChange={e => setKharchaReturnReason(e.target.value)}
+                            style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px' }}
+                          />
+                        </div>
+
+                        <button
+                          onClick={handleKharchaReturn}
+                          disabled={submitting}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: '#4caf50',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontWeight: '600'
+                          }}
+                        >
+                          {submitting ? 'Processing...' : 'Confirm Return'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

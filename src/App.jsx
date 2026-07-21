@@ -25,6 +25,7 @@ import FabricStockMtr from './pages/FabricStockMtr.jsx';
 import MaterialAgainstPoForm from './pages/MaterialAgainstPoForm.jsx';
 import FabricPoAudit from './pages/FabricPoAudit.jsx';
 import ReAddMaterialForm from './pages/ReAddMaterialForm.jsx';
+import AttendancePage from './pages/AttendancePage.jsx';
 
 
 
@@ -34,6 +35,8 @@ import LocationWiseReport from './pages/LocationWiseReport.jsx';
 import DailyFabricIssueReport from './pages/DailyFabricIssueReport.jsx';
 import DyeingShortageReport from './pages/report.jsx';
 import CutterMasterWiseReport from './pages/CutterMasterWiseReport.jsx';
+import DailyCuttingReport from './pages/DailyCuttingReport.jsx';
+import HallWiseCuttingReport from './pages/HallWiseCuttingReport.jsx';
 
 
 export default function App() {
@@ -269,13 +272,16 @@ export default function App() {
               <Route path="/material-against-po" element={<MaterialAgainstPoForm />} />
               <Route path="/fabric-po-audit" element={<FabricPoAudit />} />
               <Route path="/re-add-material" element={<ReAddMaterialForm />} />
+              <Route path="/attendance" element={<AttendancePage />} />
 
 
 
               <Route path="/reports/daily-inventory/quantity-wise" element={<DailyInventoryQuantity />} />
+              <Route path="/reports/daily-cutting-report" element={<DailyCuttingReport />} />
               <Route path="/reports/daily-cutting/cutter-master" element={<CutterMasterWiseReport />} />
               <Route path="/reports/daily-cutting/supervisor" element={<SupervisorWiseReport />} />
               <Route path="/reports/daily-cutting/location" element={<LocationWiseReport />} />
+              <Route path="/reports/daily-cutting/hall" element={<HallWiseCuttingReport />} />
               <Route path="/reports/daily-fabric-issue" element={<DailyFabricIssueReport />} />
               <Route path="/reports/dyeing-shortage" element={<DyeingShortageReport />} />
               {user?.role !== 'Admin' && (

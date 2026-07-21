@@ -13,7 +13,7 @@ import {
 export default function CutterMasterWiseReport() {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 7); // Default to last 7 days
+    d.setDate(d.getDate() - 1); // Default to last 2 days (yesterday and today)
     return d.toISOString().slice(0, 10);
   });
   const [endDate, setEndDate] = useState(() => {
@@ -28,9 +28,32 @@ export default function CutterMasterWiseReport() {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const response = await store.getCutterMasterIssuanceReport(startDate, endDate);
+      // Fetch table supervisor mapping and issuance report concurrently
+      const [tablesRes, response] = await Promise.all([
+        store.getTables(),
+        store.getCutterMasterIssuanceReport(startDate, endDate)
+      ]);
+
+      const tableSupervisorMap = {};
+      if (tablesRes && tablesRes.success) {
+        (tablesRes.data || []).forEach(t => {
+          if (t.name && t.Supervisor && t.Supervisor.name) {
+            tableSupervisorMap[String(t.name).trim().toLowerCase()] = t.Supervisor.name;
+          }
+        });
+      }
+
       if (response && response.success) {
-        setReportData(response.data || []);
+        const rawData = response.data || [];
+        const mappedData = rawData.map(item => {
+          const tblKey = String(item.tableNumber || '').trim().toLowerCase();
+          const assignedSupervisor = tableSupervisorMap[tblKey];
+          return {
+            ...item,
+            supervisor: assignedSupervisor || item.supervisor || 'Unassigned'
+          };
+        });
+        setReportData(mappedData);
       } else {
         setReportData([]);
       }
@@ -44,7 +67,7 @@ export default function CutterMasterWiseReport() {
 
   useEffect(() => {
     fetchReport();
-  }, [startDate, endDate]);
+  }, []);
 
   // Get unique cutter masters and tables from the raw data for filter dropdowns
   const uniqueCutterMasters = useMemo(() => {
@@ -57,9 +80,14 @@ export default function CutterMasterWiseReport() {
     return ['All', ...new Set(tbls)].sort();
   }, [reportData]);
 
-  // Filtered rows matching search term and dropdown selections
+  // Filtered rows matching search term, dropdown selections and excluding zero weight
   const filteredData = useMemo(() => {
     return reportData.filter(item => {
+      // Exclude zero-weight entries
+      if (parseFloat(item.weight || 0) === 0) {
+        return false;
+      }
+
       // Cutter Master filter
       if (selectedCutterMaster !== 'All' && item.cutterMaster !== selectedCutterMaster) {
         return false;
@@ -178,12 +206,73 @@ export default function CutterMasterWiseReport() {
     XLSX.writeFile(wb, `Cutter_Master_Issuance_Report_${startDate}_to_${endDate}.xlsx`);
   };
 
+  const getTodayAttendanceText = async () => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let hodsPresent = 0;
+    let supervisorsPresent = 0;
+    let helpersPresent = 0;
+    const absentees = [];
+
+    const safeParseJSON = (val) => {
+      if (!val) return [];
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch (e) { return []; }
+    };
+
+    try {
+      const attRes = await store.getAttendance(todayStr);
+      if (attRes && attRes.success && attRes.data) {
+        attRes.data.forEach(record => {
+          const recordHods = safeParseJSON(record.hods);
+          const recordSups = safeParseJSON(record.supervisors);
+          const recordHelpers = safeParseJSON(record.helpers);
+
+          recordHods.forEach(h => {
+            if (h.status === 'Present' || h.status === 'Half Day') {
+              hodsPresent++;
+            } else if (h.status === 'Absent') {
+              absentees.push(`${h.name} (HOD)`);
+            }
+          });
+
+          recordSups.forEach(s => {
+            if (s.status === 'Present' || s.status === 'Half Day') {
+              supervisorsPresent++;
+            } else if (s.status === 'Absent') {
+              absentees.push(`${s.name} (Supervisor)`);
+            }
+          });
+
+          recordHelpers.forEach(hp => {
+            if (hp.status === 'Present' || hp.status === 'Half Day') {
+              helpersPresent++;
+            } else if (hp.status === 'Absent') {
+              absentees.push(`${hp.name} (Helper)`);
+            }
+          });
+        });
+      }
+    } catch (e) {
+      console.error("Failed to load today's attendance for PDF:", e);
+    }
+
+    const uniqueAbsentees = [...new Set(absentees)];
+
+    return {
+      summary: `HODs Present: ${hodsPresent} | Supervisors Present: ${supervisorsPresent} | Helpers Present: ${helpersPresent}`,
+      absenteesText: uniqueAbsentees.length > 0 ? `Absentees: ${uniqueAbsentees.join(', ')}` : "Absentees: None"
+    };
+  };
+
   // Export to PDF Summary (Lot-Wise Aggregation)
-  const exportToPdf = () => {
+  const exportToPdf = async () => {
     if (filteredData.length === 0) {
       alert("No data available to export.");
       return;
     }
+
+    // Fetch today's attendance
+    const attData = await getTodayAttendanceText();
 
     // Group filteredData lot-wise for PDF export
     const lotMap = {};
@@ -215,7 +304,7 @@ export default function CutterMasterWiseReport() {
     const PAGE_W = doc.internal.pageSize.getWidth();
     const PAGE_H = doc.internal.pageSize.getHeight();
     const M = 30; // Margins
-    let y = 45;
+    let y = 35;
 
     const setFont = (style, size) => {
       doc.setFont("helvetica", style);
@@ -231,19 +320,27 @@ export default function CutterMasterWiseReport() {
 
     drawPageBorder();
 
-    // Header
+    // Left Side - Header Title
     doc.setTextColor(0, 0, 0);
-    setFont("bold", 15);
-    doc.text("CUTTER MASTER WISE ISSUANCE REPORT", M + 15, y + 20);
+    setFont("bold", 14);
+    doc.text("CUTTER MASTER WISE ISSUANCE REPORT", M + 15, y + 15);
 
-    setFont("normal", 9.5);
-    doc.text(`Period: ${startDate} to ${endDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 36);
+    setFont("normal", 9);
+    doc.text(`Period: ${startDate} to ${endDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
 
+    // Right Side - Today's Attendance Block
+    setFont("bold", 8);
+    doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 290, y + 10);
+    setFont("normal", 7.5);
+    doc.text(attData.summary, PAGE_W - M - 290, y + 21);
+    doc.text(attData.absenteesText, PAGE_W - M - 290, y + 31);
+
+    // Divider Line
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 48, PAGE_W - M, y + 48);
+    doc.line(M, y + 39, PAGE_W - M, y + 39);
 
-    y += 65;
+    y += 54;
 
     // Summary Metrics Box
     doc.setFillColor(255, 255, 255);
@@ -364,6 +461,268 @@ export default function CutterMasterWiseReport() {
     doc.save(`Cutter_Master_Wise_Issuance_Report_${startDate}_to_${endDate}.pdf`);
   };
 
+  const exportTableWisePdf = async () => {
+    if (filteredData.length === 0) {
+      alert("No data available to export.");
+      return;
+    }
+
+    // Fetch today's attendance
+    const attData = await getTodayAttendanceText();
+
+    // Group filteredData by tableNumber
+    const tableMap = {};
+    filteredData.forEach(item => {
+      const tbl = item.tableNumber || "Unassigned Table";
+      if (!tableMap[tbl]) {
+        tableMap[tbl] = {
+          tableNumber: tbl,
+          cutterMasters: new Set(),
+          supervisors: new Set(),
+          rolls: 0,
+          weight: 0,
+          lots: new Set()
+        };
+      }
+      if (item.cutterMaster) tableMap[tbl].cutterMasters.add(item.cutterMaster);
+      if (item.supervisor) tableMap[tbl].supervisors.add(item.supervisor);
+      if (item.lotNumber) tableMap[tbl].lots.add(item.lotNumber);
+      tableMap[tbl].rolls += item.rolls || 0;
+      tableMap[tbl].weight += item.weight || 0;
+    });
+
+    const tableWiseData = Object.values(tableMap)
+      .filter(item => item.weight > 0)
+      .sort((a, b) => {
+        return String(a.tableNumber).localeCompare(String(b.tableNumber), undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "pt",
+      format: "a4"
+    });
+
+    const PAGE_W = doc.internal.pageSize.getWidth();
+    const PAGE_H = doc.internal.pageSize.getHeight();
+    const M = 30; // Margins
+    let y = 35;
+
+    const setFont = (style, size) => {
+      doc.setFont("helvetica", style);
+      doc.setFontSize(size);
+    };
+
+    // Draw page border
+    const drawPageBorder = () => {
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1.2);
+      doc.rect(M - 10, 15, PAGE_W - 2 * (M - 10), PAGE_H - 30);
+    };
+
+    drawPageBorder();
+
+    // Left Side - Header Title
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 14);
+    doc.text("TABLE WISE PRODUCTION SUMMARY REPORT", M + 15, y + 15);
+
+    setFont("normal", 9);
+    doc.text(`Period: ${startDate} to ${endDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+
+    // Right Side - Today's Attendance Block
+    setFont("bold", 8);
+    doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 290, y + 10);
+    setFont("normal", 7.5);
+    doc.text(attData.summary, PAGE_W - M - 290, y + 21);
+    doc.text(attData.absenteesText, PAGE_W - M - 290, y + 31);
+
+    // Divider Line
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1);
+    doc.line(M, y + 39, PAGE_W - M, y + 39);
+
+    y += 54;
+
+    // Summary Metrics Box
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1);
+    doc.rect(M, y, PAGE_W - 2 * M, 45); // Outer border
+
+    // Metrics vertical divider lines (3 columns)
+    const colWidth = (PAGE_W - 2 * M) / 3;
+    doc.line(M + colWidth, y, M + colWidth, y + 45);
+    doc.line(M + 2 * colWidth, y, M + 2 * colWidth, y + 45);
+
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 8.5);
+    doc.text("TOTAL ACTIVE TABLES", M + 15, y + 16);
+    doc.text("TOTAL ROLLS ISSUED", M + colWidth + 15, y + 16);
+    doc.text("TOTAL WEIGHT CONSUMED", M + 2 * colWidth + 15, y + 16);
+
+    setFont("bold", 11);
+    doc.text(`${tableWiseData.length} Tables`, M + 15, y + 34);
+    doc.text(`${stats.totalRolls} Rolls`, M + colWidth + 15, y + 34);
+    doc.text(`${stats.totalWeight.toFixed(2)} KG`, M + 2 * colWidth + 15, y + 34);
+
+    y += 65;
+
+    // --- Table Column Settings (Removed Cutter Master) ---
+    const headers = [
+      { label: "SR", w: 35, align: "center" },
+      { label: "Table Number", w: 100, align: "center" },
+      { label: "Supervisors", w: 180, align: "center" },
+      { label: "Total Rolls", w: 90, align: "center" },
+      { label: "Total Weight (KG)", w: 110, align: "center" },
+      { label: "Lots Processed", w: 140, align: "center" }
+    ];
+
+    const totalTableWidth = headers.reduce((sum, h) => sum + h.w, 0);
+    const scaleFactor = (PAGE_W - 2 * M) / totalTableWidth;
+    headers.forEach(h => { h.w = h.w * scaleFactor; });
+
+    // Helper to draw Table Header
+    const drawTableHeader = (currentY) => {
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1.1);
+      doc.rect(M, currentY, PAGE_W - 2 * M, 22);
+
+      doc.setTextColor(0, 0, 0);
+      setFont("bold", 8.5);
+
+      let curX = M;
+      headers.forEach(h => {
+        let xOffset = 5;
+        if (h.align === "right") xOffset = h.w - 5;
+        else if (h.align === "center") xOffset = h.w / 2;
+
+        doc.text(h.label, curX + xOffset, currentY + 14, { align: h.align });
+
+        if (curX > M) {
+          doc.line(curX, currentY, curX, currentY + 22);
+        }
+        curX += h.w;
+      });
+    };
+
+    drawTableHeader(y);
+    y += 22;
+
+    // --- Table Rows ---
+    tableWiseData.forEach((item, idx) => {
+      const supsStr = Array.from(item.supervisors).join(', ') || "—";
+      const lotsStr = Array.from(item.lots).join(', ') || "—";
+
+      // Calculate lines needed
+      const maxLotsW = headers[5].w - 10;
+      const maxSupsW = headers[2].w - 10;
+      
+      const splitSups = doc.splitTextToSize(supsStr, maxSupsW);
+      const splitLots = doc.splitTextToSize(lotsStr, maxLotsW);
+      
+      const lineCount = Math.max(splitSups.length, splitLots.length, 1);
+      const rowHeight = 12 + (lineCount * 10); // compact height calculation
+
+      if (y + rowHeight > PAGE_H - 55) {
+        doc.addPage();
+        drawPageBorder();
+        y = 40;
+        drawTableHeader(y);
+        y += 22;
+      }
+
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.7);
+      doc.rect(M, y, PAGE_W - 2 * M, rowHeight);
+
+      doc.setTextColor(0, 0, 0);
+      setFont("normal", 8);
+
+      let rowX = M;
+      headers.forEach((h, colIdx) => {
+        let xOffset = 5;
+        if (h.align === "right") xOffset = h.w - 5;
+        else if (h.align === "center") xOffset = h.w / 2;
+
+        if (colIdx === 2) {
+          // Supervisors (potentially multi-line)
+          doc.text(splitSups, rowX + xOffset, y + 11, { align: h.align });
+        } else if (colIdx === 5) {
+          // Lots (potentially multi-line)
+          doc.text(splitLots, rowX + xOffset, y + 11, { align: h.align });
+        } else {
+          // Single-line values
+          let val = "";
+          if (colIdx === 0) val = (idx + 1).toString();
+          else if (colIdx === 1) val = item.tableNumber.toString();
+          else if (colIdx === 3) val = item.rolls.toString();
+          else if (colIdx === 4) val = item.weight.toFixed(2);
+          
+          doc.text(val, rowX + xOffset, y + 11 + ((rowHeight - 20) / 2), { align: h.align });
+        }
+
+        if (rowX > M) {
+          doc.line(rowX, y, rowX, y + rowHeight);
+        }
+        rowX += h.w;
+      });
+
+      y += rowHeight;
+    });
+
+    // Draw total row box
+    const totalRowHeight = 22;
+    if (y + totalRowHeight > PAGE_H - 55) {
+      doc.addPage();
+      drawPageBorder();
+      y = 40;
+      drawTableHeader(y);
+      y += 22;
+    }
+
+    doc.setFillColor(250, 250, 250);
+    doc.rect(M, y, PAGE_W - 2 * M, totalRowHeight, "F");
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.1);
+    doc.rect(M, y, PAGE_W - 2 * M, totalRowHeight);
+
+    const sumRolls = tableWiseData.reduce((sum, item) => sum + (parseInt(item.rolls) || 0), 0);
+    const sumWeight = tableWiseData.reduce((sum, item) => sum + (parseFloat(item.weight) || 0), 0).toFixed(2);
+
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 8.5);
+
+    let rowX = M;
+    headers.forEach((h, colIdx) => {
+      let xOffset = 5;
+      if (h.align === "right") xOffset = h.w - 5;
+      else if (h.align === "center") xOffset = h.w / 2;
+
+      let val = "";
+      if (colIdx === 2) {
+        val = "Total:";
+      } else if (colIdx === 3) {
+        val = sumRolls.toString();
+      } else if (colIdx === 4) {
+        val = sumWeight;
+      }
+
+      if (val) {
+        doc.text(val, rowX + xOffset, y + 14, { align: h.align });
+      }
+
+      if (rowX > M) {
+        doc.line(rowX, y, rowX, y + totalRowHeight);
+      }
+      rowX += h.w;
+    });
+    y += totalRowHeight;
+
+    doc.save(`Table_Wise_Issuance_Report_${startDate}_to_${endDate}.pdf`);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: '2000px', margin: '0 auto' }}>
       <style>{`
@@ -467,13 +826,23 @@ export default function CutterMasterWiseReport() {
           </div>
 
           <button
-            className="btn btn-outline"
+            className="btn btn-primary"
             onClick={fetchReport}
             disabled={loading}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 38,
+              borderRadius: 8,
+              background: 'var(--primary)',
+              color: '#ffffff',
+              border: 'none',
+              fontWeight: 700
+            }}
           >
             <RefreshCw size={14} className={loading ? "spin-animation" : ""} />
-            Refresh
+            Search / Refresh
           </button>
 
           <button
@@ -486,9 +855,18 @@ export default function CutterMasterWiseReport() {
           </button>
 
           <button
-            className="btn btn-primary"
+            className="btn btn-outline"
+            onClick={exportTableWisePdf}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderColor: 'var(--secondary)', color: 'var(--secondary)' }}
+          >
+            <Layers size={14} />
+            Download Table-Wise PDF
+          </button>
+
+          <button
+            className="btn btn-outline"
             onClick={exportToExcel}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderColor: '#10b981', color: '#10b981' }}
           >
             <Download size={14} />
             Export Excel
@@ -709,7 +1087,6 @@ export default function CutterMasterWiseReport() {
               <tr style={{ backgroundColor: 'var(--bg-hover)' }}>
                 <th style={{ width: '50px', textAlign: 'center' }}>SR</th>
                 <th>Date</th>
-                <th>Cutter Master</th>
                 <th>Supervisor</th>
                 <th>Table</th>
                 <th>Fabric Description</th>
@@ -722,7 +1099,7 @@ export default function CutterMasterWiseReport() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} style={{ textAlign: 'center', padding: '60px 0' }}>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '60px 0' }}>
                     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
                       <RefreshCw size={24} className="spin-animation" style={{ color: 'var(--primary)' }} />
                       <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Loading report...</span>
@@ -731,7 +1108,7 @@ export default function CutterMasterWiseReport() {
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={9}>
                     <div className="empty-state" style={{ padding: '60px 20px', textAlign: 'center' }}>
                       <div style={{
                         display: 'inline-flex',
@@ -756,11 +1133,6 @@ export default function CutterMasterWiseReport() {
                   <tr key={item.id} className="hover-row" style={{ borderBottom: '1px solid var(--border-light)' }}>
                     <td style={{ textAlign: 'center', fontWeight: 600, color: 'var(--text-muted)' }}>{idx + 1}</td>
                     <td style={{ fontWeight: 600 }}>{item.date}</td>
-                    <td style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                      <span style={{ display: 'inline-block', padding: '3px 6px', borderRadius: 4, backgroundColor: 'var(--primary-light)', fontSize: 11 }}>
-                        {item.cutterMaster}
-                      </span>
-                    </td>
                     <td>{item.supervisor}</td>
                     <td>
                       <span style={{ fontWeight: 700, color: 'var(--secondary)' }}>

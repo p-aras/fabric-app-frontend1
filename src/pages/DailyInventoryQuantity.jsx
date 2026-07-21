@@ -14,6 +14,7 @@ export default function DailyInventoryQuantity() {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [oldRollsFilter, setOldRollsFilter] = useState('all'); // 'all', 'skip', 'only'
 
   const fetchReport = async (dateStr) => {
     setLoading(true);
@@ -40,17 +41,31 @@ export default function DailyInventoryQuantity() {
     fetchReport(selectedDate);
   }, [selectedDate]);
 
-  // Filtered rows matching search term
+  // Filtered rows matching search term and old rolls filter
   const filteredData = reportData.filter(item => {
+    // 1. Search filter
     const q = searchTerm.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      String(item.barcode).toLowerCase().includes(q) ||
-      String(item.name).toLowerCase().includes(q) ||
-      String(item.shade).toLowerCase().includes(q) ||
-      String(item.lotNo).toLowerCase().includes(q) ||
-      String(item.type).toLowerCase().includes(q)
-    );
+    if (q) {
+      const matchSearch = (
+        String(item.barcode).toLowerCase().includes(q) ||
+        String(item.name).toLowerCase().includes(q) ||
+        String(item.shade).toLowerCase().includes(q) ||
+        String(item.lotNo).toLowerCase().includes(q) ||
+        String(item.type).toLowerCase().includes(q)
+      );
+      if (!matchSearch) return false;
+    }
+
+    // 2. Old rolls filter (barcodes starting with '9')
+    const barcodeStr = String(item.barcode || '').trim();
+    const startsWith9 = barcodeStr.startsWith('9');
+    if (oldRollsFilter === 'skip') {
+      return !startsWith9;
+    } else if (oldRollsFilter === 'only') {
+      return startsWith9;
+    }
+
+    return true;
   });
 
   // Calculate statistics
@@ -128,15 +143,76 @@ export default function DailyInventoryQuantity() {
     XLSX.writeFile(wb, `Daily_Inventory_Quantity_${selectedDate}.xlsx`);
   };
 
+  const getTodayAttendanceText = async () => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let hodsPresent = 0;
+    let supervisorsPresent = 0;
+    let helpersPresent = 0;
+    const absentees = [];
+
+    const safeParseJSON = (val) => {
+      if (!val) return [];
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch (e) { return []; }
+    };
+
+    try {
+      const attRes = await store.getAttendance(todayStr);
+      if (attRes && attRes.success && attRes.data) {
+        attRes.data.forEach(record => {
+          const recordHods = safeParseJSON(record.hods);
+          const recordSups = safeParseJSON(record.supervisors);
+          const recordHelpers = safeParseJSON(record.helpers);
+
+          recordHods.forEach(h => {
+            if (h.status === 'Present' || h.status === 'Half Day') {
+              hodsPresent++;
+            } else if (h.status === 'Absent') {
+              absentees.push(`${h.name} (HOD)`);
+            }
+          });
+
+          recordSups.forEach(s => {
+            if (s.status === 'Present' || s.status === 'Half Day') {
+              supervisorsPresent++;
+            } else if (s.status === 'Absent') {
+              absentees.push(`${s.name} (Supervisor)`);
+            }
+          });
+
+          recordHelpers.forEach(hp => {
+            if (hp.status === 'Present' || hp.status === 'Half Day') {
+              helpersPresent++;
+            } else if (hp.status === 'Absent') {
+              absentees.push(`${hp.name} (Helper)`);
+            }
+          });
+        });
+      }
+    } catch (e) {
+      console.error("Failed to load today's attendance for PDF:", e);
+    }
+
+    const uniqueAbsentees = [...new Set(absentees)];
+
+    return {
+      summary: `HODs Present: ${hodsPresent} | Supervisors Present: ${supervisorsPresent} | Helpers Present: ${helpersPresent}`,
+      absenteesText: uniqueAbsentees.length > 0 ? `Absentees: ${uniqueAbsentees.join(', ')}` : "Absentees: None"
+    };
+  };
+
   // Export to PDF Summary (Black & White Report Casing)
-  const exportToPdf = () => {
+  const exportToPdf = async () => {
     if (filteredData.length === 0) {
       alert("No data available to export.");
       return;
     }
 
+    // Fetch today's attendance
+    const attData = await getTodayAttendanceText();
+
     const doc = new jsPDF({
-      orientation: "portrait",
+      orientation: "landscape",
       unit: "pt",
       format: "a4"
     });
@@ -144,7 +220,7 @@ export default function DailyInventoryQuantity() {
     const PAGE_W = doc.internal.pageSize.getWidth();
     const PAGE_H = doc.internal.pageSize.getHeight();
     const M = 30; // Margins
-    let y = 45;
+    let y = 35;
 
     // Helper functions
     const setFont = (style, size) => {
@@ -164,18 +240,25 @@ export default function DailyInventoryQuantity() {
 
     // --- Header Block (Pure Black & White) ---
     doc.setTextColor(0, 0, 0);
-    setFont("bold", 15);
-    doc.text("DAILY INVENTORY SUMMARY REPORT", M + 15, y + 20);
+    setFont("bold", 14);
+    doc.text("DAILY INVENTORY SUMMARY REPORT", M + 15, y + 15);
 
-    setFont("normal", 9.5);
-    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 36);
+    setFont("normal", 9);
+    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+
+    // Right Side - Today's Attendance Block
+    setFont("bold", 8);
+    doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 230, y + 10);
+    setFont("normal", 7.5);
+    doc.text(attData.summary, PAGE_W - M - 230, y + 21);
+    doc.text(attData.absenteesText, PAGE_W - M - 230, y + 31);
 
     // Header underline divider
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 48, PAGE_W - M, y + 48);
+    doc.line(M, y + 39, PAGE_W - M, y + 39);
 
-    y += 58;
+    y += 54;
 
     // --- Table Column Settings ---
     const headers = [
@@ -273,16 +356,64 @@ export default function DailyInventoryQuantity() {
       y += 20;
     });
 
+    // Check page overflow for total row
+    if (y > PAGE_H - 55) {
+      doc.addPage();
+      drawPageBorder();
+      y = 40;
+      drawTableHeader(y);
+      y += 22;
+    }
+
+    // Draw total row box
+    doc.setFillColor(250, 250, 250);
+    doc.rect(M, y, PAGE_W - 2 * M, 20, "F");
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.1);
+    doc.rect(M, y, PAGE_W - 2 * M, 20);
+
+    const totalQtyVal = filteredData.reduce((sum, item) => sum + (parseFloat(item.weight) || 0), 0).toFixed(2);
+
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 8.5);
+
+    let rowX = M;
+    headers.forEach((h, colIdx) => {
+      let xOffset = 5;
+      if (h.align === "right") xOffset = h.w - 5;
+      else if (h.align === "center") xOffset = h.w / 2;
+
+      let val = "";
+      if (colIdx === 5) {
+        val = "Total:";
+      } else if (colIdx === 6) {
+        val = totalQtyVal;
+      }
+
+      if (val) {
+        doc.text(val, rowX + xOffset, y + 13, { align: h.align });
+      }
+
+      if (rowX > M) {
+        doc.line(rowX, y, rowX, y + 20);
+      }
+      rowX += h.w;
+    });
+    y += 20;
+
     // Save PDF Document
     doc.save(`Daily_Inventory_Summary_${selectedDate}.pdf`);
   };
 
   // Export to Grouped Fabric/Shade PDF Summary (Black & White)
-  const exportGroupedPdf = () => {
+  const exportGroupedPdf = async () => {
     if (filteredData.length === 0) {
       alert("No data available to export.");
       return;
     }
+
+    // Fetch today's attendance
+    const attData = await getTodayAttendanceText();
 
     // Group filteredData by fabric name (item name), shade, and unit
     const grouped = {};
@@ -312,7 +443,7 @@ export default function DailyInventoryQuantity() {
     const PAGE_W = doc.internal.pageSize.getWidth();
     const PAGE_H = doc.internal.pageSize.getHeight();
     const M = 30; // Margins
-    let y = 45;
+    let y = 35;
 
     // Helper functions
     const setFont = (style, size) => {
@@ -332,18 +463,25 @@ export default function DailyInventoryQuantity() {
 
     // --- Header Block (Pure Black & White) ---
     doc.setTextColor(0, 0, 0);
-    setFont("bold", 15);
-    doc.text("DAILY FABRIC & SHADE RECEIVED SUMMARY", M + 15, y + 20);
+    setFont("bold", 14);
+    doc.text("DAILY FABRIC RECEIVED ", M + 15, y + 15);
 
-    setFont("normal", 9.5);
-    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 36);
+    setFont("normal", 9);
+    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+
+    // Right Side - Today's Attendance Block
+    setFont("bold", 8);
+    doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 230, y + 10);
+    setFont("normal", 7.5);
+    doc.text(attData.summary, PAGE_W - M - 230, y + 21);
+    doc.text(attData.absenteesText, PAGE_W - M - 230, y + 31);
 
     // Header underline divider
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 48, PAGE_W - M, y + 48);
+    doc.line(M, y + 39, PAGE_W - M, y + 39);
 
-    y += 65;
+    y += 54;
 
     // --- Summary Metrics Box Grid (Border box, no fills) ---
     doc.setFillColor(255, 255, 255);
@@ -351,26 +489,21 @@ export default function DailyInventoryQuantity() {
     doc.setLineWidth(1);
     doc.rect(M, y, PAGE_W - 2 * M, 45); // Outer border box
 
-    // Metrics vertical divider lines
-    doc.line(M + 105, y, M + 105, y + 45);
-    doc.line(M + 210, y, M + 210, y + 45);
-    doc.line(M + 315, y, M + 315, y + 45);
-    doc.line(M + 425, y, M + 425, y + 45);
+    // Metrics vertical divider lines (3 columns)
+    const colWidth = (PAGE_W - 2 * M) / 3;
+    doc.line(M + colWidth, y, M + colWidth, y + 45);
+    doc.line(M + 2 * colWidth, y, M + 2 * colWidth, y + 45);
 
     doc.setTextColor(0, 0, 0);
-    setFont("bold", 8);
-    doc.text("TOTAL WEIGHT", M + 10, y + 16);
-    doc.text("TOTAL METERS", M + 115, y + 16);
-    doc.text("TOTAL ROLLS", M + 220, y + 16);
-    doc.text("MATERIAL ROLLS", M + 325, y + 16);
-    doc.text("DYEING ROLLS", M + 435, y + 16);
+    setFont("bold", 8.5);
+    doc.text("TOTAL WEIGHT", M + 15, y + 16);
+    doc.text("TOTAL METERS", M + colWidth + 15, y + 16);
+    doc.text("TOTAL ROLLS / PKGS", M + 2 * colWidth + 15, y + 16);
 
     setFont("bold", 11);
-    doc.text(`${stats.totalWeight.toFixed(2)} KG`, M + 10, y + 34);
-    doc.text(`${stats.totalMeters.toFixed(2)} MTR`, M + 115, y + 34);
-    doc.text(`${stats.totalRolls}`, M + 220, y + 34);
-    doc.text(`${stats.materialRolls} Rl | ${stats.materialWeight.toFixed(1)} KG`, M + 325, y + 34);
-    doc.text(`${stats.dyeingRolls} Rl | ${stats.dyeingWeight.toFixed(1)} KG`, M + 435, y + 34);
+    doc.text(`${stats.totalWeight.toFixed(2)} KG`, M + 15, y + 34);
+    doc.text(`${stats.totalMeters.toFixed(2)} MTR`, M + colWidth + 15, y + 34);
+    doc.text(`${stats.totalRolls}`, M + 2 * colWidth + 15, y + 34);
 
     y += 65;
 
@@ -464,6 +597,54 @@ export default function DailyInventoryQuantity() {
 
       y += 20;
     });
+
+    // Check page overflow for total row
+    if (y > PAGE_H - 55) {
+      doc.addPage();
+      drawPageBorder();
+      y = 40;
+      drawTableHeader(y);
+      y += 22;
+    }
+
+    // Draw total row box
+    doc.setFillColor(250, 250, 250);
+    doc.rect(M, y, PAGE_W - 2 * M, 20, "F");
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.1);
+    doc.rect(M, y, PAGE_W - 2 * M, 20);
+
+    const sumRolls = groupedList.reduce((sum, item) => sum + item.totalRolls, 0);
+    const sumQtyVal = groupedList.reduce((sum, item) => sum + item.totalWeight, 0).toFixed(2);
+
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 8.5);
+
+    let rowX = M;
+    headers.forEach((h, colIdx) => {
+      let xOffset = 5;
+      if (h.align === "right") xOffset = h.w - 5;
+      else if (h.align === "center") xOffset = h.w / 2;
+
+      let val = "";
+      if (colIdx === 2) {
+        val = "Total:";
+      } else if (colIdx === 3) {
+        val = sumRolls.toString();
+      } else if (colIdx === 4) {
+        val = sumQtyVal;
+      }
+
+      if (val) {
+        doc.text(val, rowX + xOffset, y + 13, { align: h.align });
+      }
+
+      if (rowX > M) {
+        doc.line(rowX, y, rowX, y + 20);
+      }
+      rowX += h.w;
+    });
+    y += 20;
 
     // Save PDF Document
     doc.save(`Daily_Inventory_Grouped_Summary_${selectedDate}.pdf`);
@@ -712,29 +893,57 @@ export default function DailyInventoryQuantity() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          backgroundColor: 'var(--surface)'
+          backgroundColor: 'var(--surface)',
+          flexWrap: 'wrap',
+          gap: 12
         }}>
-          <div className="topbar-search" style={{
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '6px 12px',
-            width: '280px'
-          }}>
-            <Search size={14} className="search-icon" style={{ color: 'var(--text-muted)' }} />
-            <input
-              placeholder="Search table rows..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                outline: 'none',
-                fontSize: 13,
-                color: 'var(--text-primary)',
-                width: '100%'
-              }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div className="topbar-search" style={{
+              background: 'var(--bg)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: '6px 12px',
+              width: '280px'
+            }}>
+              <Search size={14} className="search-icon" style={{ color: 'var(--text-muted)' }} />
+              <input
+                placeholder="Search table rows..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  outline: 'none',
+                  fontSize: 13,
+                  color: 'var(--text-primary)',
+                  width: '100%'
+                }}
+              />
+            </div>
+
+            {/* OLD ROLLS STATUS FILTER */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Old Rolls:</span>
+              <select
+                value={oldRollsFilter}
+                onChange={e => setOldRollsFilter(e.target.value)}
+                style={{
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  color: 'var(--text-primary)',
+                  fontWeight: 600,
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="all">Show All</option>
+                <option value="skip">Skip Old Rolls (Skip '9')</option>
+                <option value="only">Only Old Rolls ('9' Prefix)</option>
+              </select>
+            </div>
           </div>
 
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -824,6 +1033,20 @@ export default function DailyInventoryQuantity() {
                     <td style={{ textAlign: 'right', fontWeight: 700 }}>{item.rolls}</td>
                   </tr>
                 ))
+              )}
+              {!loading && filteredData.length > 0 && (
+                <tr style={{ backgroundColor: 'var(--bg-hover)', fontWeight: 800, borderTop: '2.5px double var(--border)', borderBottom: '2.5px double var(--border)' }}>
+                  <td colSpan={7} style={{ textAlign: 'right', padding: '10px 15px', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>
+                    Total:
+                  </td>
+                  <td style={{ textAlign: 'right', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>
+                    {filteredData.reduce((sum, item) => sum + (parseFloat(item.weight) || 0), 0).toFixed(2)}
+                  </td>
+                  <td></td>
+                  <td style={{ textAlign: 'right', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>
+                    {filteredData.reduce((sum, item) => sum + (item.rolls || 0), 0)}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

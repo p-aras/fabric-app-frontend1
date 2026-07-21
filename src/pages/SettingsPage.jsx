@@ -2,6 +2,85 @@ import { useState, useEffect } from 'react';
 import { store } from '../store.js';
 import { Settings, Warehouse, Plus, Edit, Trash2, Save, X, Building2, Package, Bell, Moon, Sun, Globe, Lock, History, CheckCircle2, AlertCircle, LayoutGrid } from 'lucide-react';
 
+function SupervisorDatalistInput({ initialValue, users, onSelect, tblId, loadUsers }) {
+  const [val, setVal] = useState(initialValue || '');
+  
+  useEffect(() => {
+    setVal(initialValue || '');
+  }, [initialValue]);
+
+  const handleSave = async () => {
+    const trimmedVal = val.trim();
+    if (trimmedVal === '') {
+      onSelect(null);
+      return;
+    }
+
+    const matched = users.find(u => u.name.toLowerCase() === trimmedVal.toLowerCase());
+    if (matched) {
+      onSelect(matched.id);
+    } else {
+      try {
+        const res = await store.createQuickUser({ name: trimmedVal, role: 'Supervisor' });
+        if (res.success && res.data) {
+          if (loadUsers) {
+            await loadUsers();
+          }
+          onSelect(res.data.id);
+        }
+      } catch (err) {
+        alert("Failed to create supervisor user: " + err.message);
+        setVal(initialValue || '');
+      }
+    }
+  };
+
+  return (
+    <>
+      <input
+        className="form-control"
+        list={`table-sup-list-${tblId}`}
+        value={val}
+        placeholder="Type supervisor name..."
+        onChange={(e) => {
+          const txt = e.target.value;
+          setVal(txt);
+          const matched = users.find(u => u.name.toLowerCase() === txt.toLowerCase());
+          if (matched) {
+            onSelect(matched.id);
+          } else if (txt === '') {
+            onSelect(null);
+          }
+        }}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            handleSave();
+          }
+        }}
+        style={{
+          padding: '4px 8px',
+          height: '32px',
+          fontSize: '12px',
+          fontWeight: '600',
+          borderRadius: '6px',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-primary)',
+          width: '100%',
+          maxWidth: '180px'
+        }}
+      />
+      <datalist id={`table-sup-list-${tblId}`}>
+        <option value="">Unassigned</option>
+        {users.map(u => (
+          <option key={u.id} value={u.name}>{u.role}</option>
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 export default function SettingsPage({ darkMode, toggleDark }) {
   const [tab, setTab] = useState('warehouse');
   const [rooms, setRooms] = useState([]);
@@ -42,8 +121,10 @@ export default function SettingsPage({ darkMode, toggleDark }) {
   const [tables, setTables] = useState([]);
   const [users, setUsers] = useState([]);
   const [showTableForm, setShowTableForm] = useState(false);
-  const [newTableForm, setNewTableForm] = useState({ name: '', supervisorId: '', cutterMasterId: '' });
+  const [newTableForm, setNewTableForm] = useState({ name: '', supervisorId: '', cutterMasterId: '', hall: '' });
   const [editTableForm, setEditTableForm] = useState(null);
+  const [newTableSupText, setNewTableSupText] = useState('');
+  const [editTableSupText, setEditTableSupText] = useState('');
 
   const load = () => {
     let active = true;
@@ -89,10 +170,19 @@ export default function SettingsPage({ darkMode, toggleDark }) {
       return setAlertPopup({ title: 'Validation Error', message: 'Table Name is required.', type: 'danger' });
     }
     try {
+      let supervisorId = newTableForm.supervisorId || null;
+      if (!supervisorId && newTableSupText.trim()) {
+        const createRes = await store.createQuickUser({ name: newTableSupText.trim(), role: 'Supervisor' });
+        if (createRes.success && createRes.data) {
+          supervisorId = createRes.data.id;
+        }
+      }
+
       const res = await store.addTable({
         name: newTableForm.name,
-        supervisorId: newTableForm.supervisorId || null,
-        cutterMasterId: newTableForm.cutterMasterId || null
+        supervisorId: supervisorId,
+        cutterMasterId: newTableForm.cutterMasterId || null,
+        hall: newTableForm.hall || ''
       });
       if (res.success) {
         setAlertPopup({
@@ -100,7 +190,8 @@ export default function SettingsPage({ darkMode, toggleDark }) {
           message: `Successfully added Table ${res.data.name}!`,
           type: 'success'
         });
-        setNewTableForm({ name: '', supervisorId: '', cutterMasterId: '' });
+        setNewTableForm({ name: '', supervisorId: '', cutterMasterId: '', hall: '' });
+        setNewTableSupText('');
         setShowTableForm(false);
         load();
       }
@@ -114,10 +205,19 @@ export default function SettingsPage({ darkMode, toggleDark }) {
       return setAlertPopup({ title: 'Validation Error', message: 'Table Name is required.', type: 'danger' });
     }
     try {
+      let supervisorId = editTableForm.supervisorId || null;
+      if (!supervisorId && editTableSupText.trim()) {
+        const createRes = await store.createQuickUser({ name: editTableSupText.trim(), role: 'Supervisor' });
+        if (createRes.success && createRes.data) {
+          supervisorId = createRes.data.id;
+        }
+      }
+
       const res = await store.updateTable(editTableForm.id, {
         name: editTableForm.name,
-        supervisorId: editTableForm.supervisorId || null,
-        cutterMasterId: editTableForm.cutterMasterId || null
+        supervisorId: supervisorId,
+        cutterMasterId: editTableForm.cutterMasterId || null,
+        hall: editTableForm.hall || ''
       });
       if (res.success) {
         setAlertPopup({
@@ -126,6 +226,7 @@ export default function SettingsPage({ darkMode, toggleDark }) {
           type: 'success'
         });
         setEditTableForm(null);
+        setEditTableSupText('');
         load();
       }
     } catch (err) {
@@ -1091,6 +1192,7 @@ export default function SettingsPage({ darkMode, toggleDark }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 10 }}>
             <button className="btn btn-primary" onClick={() => {
               setNewTableForm({ name: '', supervisorId: '', cutterMasterId: '' });
+              setNewTableSupText('');
               setShowTableForm(!showTableForm);
             }}>
               <Plus size={16} /> {showTableForm ? 'Cancel' : 'Add New Table'}
@@ -1103,7 +1205,7 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                 <div className="card-title"><LayoutGrid size={15} /> Add New Table</div>
               </div>
               <div className="card-body">
-                <div className="form-grid form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                <div className="form-grid form-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
                   <div className="form-group">
                     <label className="form-label">Table Name <span className="required">*</span></label>
                     <input className="form-control"
@@ -1112,17 +1214,29 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                       onChange={e => setNewTableForm({ ...newTableForm, name: e.target.value })}
                     />
                   </div>
-                  <div className="form-group">
+                   <div className="form-group">
                     <label className="form-label">Assign Supervisor</label>
-                    <select className="form-control"
-                      value={newTableForm.supervisorId}
-                      onChange={e => setNewTableForm({ ...newTableForm, supervisorId: e.target.value ? parseInt(e.target.value) : '' })}
-                    >
+                    <input
+                      className="form-control"
+                      list="new-table-supervisor-datalist"
+                      placeholder="Type supervisor name..."
+                      value={newTableSupText}
+                      onChange={e => {
+                        const txt = e.target.value;
+                        setNewTableSupText(txt);
+                        const matched = users.find(u => u.name.toLowerCase() === txt.toLowerCase() && (u.role === 'Supervisor' || u.role === 'Staff' || true));
+                        setNewTableForm(prev => ({
+                          ...prev,
+                          supervisorId: matched ? matched.id : ''
+                        }));
+                      }}
+                    />
+                    <datalist id="new-table-supervisor-datalist">
                       <option value="">Unassigned</option>
                       {users.map(u => (
-                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                        <option key={u.id} value={u.name}>{u.role}</option>
                       ))}
-                    </select>
+                    </datalist>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Assign Cutter Master</label>
@@ -1135,6 +1249,14 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                         <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                       ))}
                     </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Hall Name</label>
+                    <input className="form-control"
+                      placeholder="e.g. Hall 1"
+                      value={newTableForm.hall || ''}
+                      onChange={e => setNewTableForm({ ...newTableForm, hall: e.target.value })}
+                    />
                   </div>
                 </div>
               </div>
@@ -1160,13 +1282,27 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                   </div>
                   <div className="form-group" style={{ marginTop: 12 }}>
                     <label className="form-label">Assign Supervisor</label>
-                    <select className="form-control" value={editTableForm.supervisorId || ''}
-                      onChange={e => setEditTableForm({ ...editTableForm, supervisorId: e.target.value ? parseInt(e.target.value) : null })}>
+                    <input
+                      className="form-control"
+                      list="edit-table-supervisor-datalist"
+                      placeholder="Type supervisor name..."
+                      value={editTableSupText}
+                      onChange={e => {
+                        const txt = e.target.value;
+                        setEditTableSupText(txt);
+                        const matched = users.find(u => u.name.toLowerCase() === txt.toLowerCase() && (u.role === 'Supervisor' || u.role === 'Staff' || true));
+                        setEditTableForm(prev => ({
+                          ...prev,
+                          supervisorId: matched ? matched.id : null
+                        }));
+                      }}
+                    />
+                    <datalist id="edit-table-supervisor-datalist">
                       <option value="">Unassigned</option>
                       {users.map(u => (
-                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                        <option key={u.id} value={u.name}>{u.role}</option>
                       ))}
-                    </select>
+                    </datalist>
                   </div>
                   <div className="form-group" style={{ marginTop: 12 }}>
                     <label className="form-label">Assign Cutter Master</label>
@@ -1177,6 +1313,14 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                         <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                       ))}
                     </select>
+                  </div>
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label className="form-label">Hall Name</label>
+                    <input className="form-control"
+                      placeholder="e.g. Hall 1"
+                      value={editTableForm.hall || ''}
+                      onChange={e => setEditTableForm({ ...editTableForm, hall: e.target.value })}
+                    />
                   </div>
                 </div>
                 <div className="card-footer" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: 16, borderTop: '1px solid var(--border)' }}>
@@ -1200,6 +1344,7 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                     <th>Table Name</th>
                     <th>Assigned Supervisor</th>
                     <th>Assigned Cutter Master</th>
+                    <th>Hall Name</th>
                     <th>Supervisor Info</th>
                     <th>Cutter Master Info</th>
                     <th style={{ width: '100px', textAlign: 'center' }}>Actions</th>
@@ -1212,45 +1357,31 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                         {tbl.name}
                       </td>
                       <td style={{ fontWeight: 600 }}>
-                        <select
-                          className="form-control"
-                          value={tbl.supervisorId || ''}
-                          onChange={async (e) => {
-                            const newSupId = e.target.value ? parseInt(e.target.value) : null;
-                            try {
-                              await store.updateTable(tbl.id, {
-                                name: tbl.name,
-                                supervisorId: newSupId,
-                                cutterMasterId: tbl.cutterMasterId
-                              });
-                              load();
-                            } catch (err) {
-                              setAlertPopup({
-                                title: 'Update Failed',
-                                message: err.message || 'Failed to assign supervisor.',
-                                type: 'danger'
-                              });
+                        <SupervisorDatalistInput
+                          tblId={tbl.id}
+                          initialValue={users.find(u => u.id === tbl.supervisorId)?.name || ''}
+                          users={users}
+                          loadUsers={load}
+                          onSelect={async (newSupId) => {
+                            if (newSupId !== tbl.supervisorId) {
+                              try {
+                                await store.updateTable(tbl.id, {
+                                  name: tbl.name,
+                                  supervisorId: newSupId,
+                                  cutterMasterId: tbl.cutterMasterId,
+                                  hall: tbl.hall
+                                });
+                                load();
+                              } catch (err) {
+                                setAlertPopup({
+                                  title: 'Update Failed',
+                                  message: err.message || 'Failed to assign supervisor.',
+                                  type: 'danger'
+                                });
+                              }
                             }
                           }}
-                          style={{
-                            padding: '4px 8px',
-                            height: '32px',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            borderRadius: '6px',
-                            background: 'var(--surface)',
-                            border: '1px solid var(--border)',
-                            color: 'var(--text-primary)',
-                            cursor: 'pointer',
-                            width: '100%',
-                            maxWidth: '180px'
-                          }}
-                        >
-                          <option value="">Unassigned</option>
-                          {users.map(u => (
-                            <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                          ))}
-                        </select>
+                        />
                       </td>
                       <td style={{ fontWeight: 600 }}>
                         <select
@@ -1262,7 +1393,8 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                               await store.updateTable(tbl.id, {
                                 name: tbl.name,
                                 supervisorId: tbl.supervisorId,
-                                cutterMasterId: newCmId
+                                cutterMasterId: newCmId,
+                                hall: tbl.hall
                               });
                               load();
                             } catch (err) {
@@ -1293,6 +1425,9 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                           ))}
                         </select>
                       </td>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {tbl.hall ? <span className="tag" style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>{tbl.hall}</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                         {tbl.Supervisor ? `${tbl.Supervisor.role} · ${tbl.Supervisor.email}` : '—'}
                       </td>
@@ -1302,7 +1437,11 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                       <td>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                           <button className="btn btn-ghost btn-icon btn-sm"
-                            onClick={() => setEditTableForm({ id: tbl.id, name: tbl.name, supervisorId: tbl.supervisorId, cutterMasterId: tbl.cutterMasterId })}
+                            onClick={() => {
+                              const currentSup = users.find(u => u.id === tbl.supervisorId);
+                              setEditTableForm({ id: tbl.id, name: tbl.name, supervisorId: tbl.supervisorId, cutterMasterId: tbl.cutterMasterId, hall: tbl.hall || '' });
+                              setEditTableSupText(currentSup ? currentSup.name : '');
+                            }}
                             title="Edit Table"
                           >
                             <Edit size={13} />

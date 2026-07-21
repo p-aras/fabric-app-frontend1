@@ -137,7 +137,7 @@ const FabricStickerForm = () => {
       try {
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 3000);
-        await fetch(`${BASE_URL}/stats`, { signal: ctrl.signal });
+        await fetch(`${BASE_URL}/health`, { signal: ctrl.signal });
         clearTimeout(tid);
         if (!isMounted.current) return;
 

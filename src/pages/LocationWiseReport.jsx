@@ -60,6 +60,12 @@ export default function LocationWiseReport() {
   // Filtered rows matching search term and dropdown selections
   const filteredData = useMemo(() => {
     return reportData.filter(item => {
+      // Filter out zero weight records
+      const wt = parseFloat(item.weight) || 0;
+      if (wt === 0) {
+        return false;
+      }
+
       // Location filter
       if (selectedLocation !== 'All' && item.location !== selectedLocation) {
         return false;
