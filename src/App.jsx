@@ -37,6 +37,7 @@ import DyeingShortageReport from './pages/report.jsx';
 import CutterMasterWiseReport from './pages/CutterMasterWiseReport.jsx';
 import DailyCuttingReport from './pages/DailyCuttingReport.jsx';
 import HallWiseCuttingReport from './pages/HallWiseCuttingReport.jsx';
+import TableWiseClassification from './pages/TableWiseClassification.jsx';
 
 
 export default function App() {
@@ -284,6 +285,7 @@ export default function App() {
               <Route path="/reports/daily-cutting/hall" element={<HallWiseCuttingReport />} />
               <Route path="/reports/daily-fabric-issue" element={<DailyFabricIssueReport />} />
               <Route path="/reports/dyeing-shortage" element={<DyeingShortageReport />} />
+              <Route path="/reports/table-wise-classification" element={<TableWiseClassification />} />
               {user?.role !== 'Admin' && (
                 <Route path="/parta-pending" element={<PartaPendingPage />} />
               )}

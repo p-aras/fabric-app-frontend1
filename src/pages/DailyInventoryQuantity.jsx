@@ -7,6 +7,17 @@ import {
 import * as XLSX from "xlsx-js-style";
 import { jsPDF } from 'jspdf';
 
+const getSupplierInitials = (name) => {
+  if (!name || name === '—') return '—';
+  const cleaned = name.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+  const words = cleaned.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '—';
+  if (words.length === 1) {
+    return words[0].substring(0, 2).toUpperCase();
+  }
+  return words.map(w => w[0]).join('').toUpperCase();
+};
+
 export default function DailyInventoryQuantity() {
   const [selectedDate, setSelectedDate] = useState(() => {
     return new Date().toISOString().slice(0, 10);
@@ -104,6 +115,7 @@ export default function DailyInventoryQuantity() {
       "Item Description": item.name,
       "Shade": item.shade,
       "Lot Number": item.lotNo,
+      "Party / Supplier": item.supplier || "—",
       "Location": item.location,
       "Quantity": item.weight,
       "Unit": item.unit || "Roll",
@@ -133,6 +145,7 @@ export default function DailyInventoryQuantity() {
       { wch: 32 }, // Item Description
       { wch: 15 }, // Shade
       { wch: 15 }, // Lot Number
+      { wch: 20 }, // Party / Supplier
       { wch: 15 }, // Location
       { wch: 12 }, // Weight
       { wch: 10 }  // Rolls
@@ -265,9 +278,10 @@ export default function DailyInventoryQuantity() {
       { label: "SR", w: 30, align: "center" },
       { label: "Barcode ID", w: 75, align: "left" },
       { label: "Type", w: 75, align: "left" },
-      { label: "Fabric Description", w: 155, align: "left" },
+      { label: "Fabric Description", w: 145, align: "left" },
       { label: "Shade", w: 80, align: "left" },
       { label: "Lot No", w: 60, align: "left" },
+      { label: "Party", w: 40, align: "left" },
       { label: "Qty", w: 55, align: "right" },
       { label: "Unit", w: 45, align: "center" }
     ];
@@ -332,9 +346,10 @@ export default function DailyInventoryQuantity() {
         (idx + 1).toString(),
         item.barcode || "—",
         item.type || "—",
-        String(item.name || "—").length > 32 ? String(item.name).substring(0, 29) + "..." : (item.name || "—"),
+        String(item.name || "—").length > 30 ? String(item.name).substring(0, 27) + "..." : (item.name || "—"),
         item.shade || "—",
         item.lotNo || "—",
+        getSupplierInitials(item.supplier),
         parseFloat(item.weight || 0).toFixed(2),
         item.unit || "Roll"
       ];
@@ -415,15 +430,16 @@ export default function DailyInventoryQuantity() {
     // Fetch today's attendance
     const attData = await getTodayAttendanceText();
 
-    // Group filteredData by fabric name (item name), shade, and unit
+    // Group filteredData by fabric name (item name), shade, supplier, and unit
     const grouped = {};
     filteredData.forEach(item => {
-      const key = `${item.name || '—'}::${item.shade || '—'}::${item.unit || 'Roll'}`;
+      const key = `${item.name || '—'}::${item.shade || '—'}::${item.supplier || '—'}::${item.unit || 'Roll'}`;
       if (!grouped[key]) {
         grouped[key] = {
           name: item.name || '—',
           shade: item.shade || '—',
           unit: item.unit || 'Roll',
+          supplier: item.supplier || '—',
           totalRolls: 0,
           totalWeight: 0
         };
@@ -510,8 +526,9 @@ export default function DailyInventoryQuantity() {
     // --- Table Column Settings ---
     const headers = [
       { label: "SR", w: 35, align: "center" },
-      { label: "Fabric Description (Item Name)", w: 220, align: "left" },
-      { label: "Shade", w: 120, align: "left" },
+      { label: "Fabric Description (Item Name)", w: 180, align: "left" },
+      { label: "Shade", w: 100, align: "left" },
+      { label: "Party", w: 60, align: "left" },
       { label: "Total Rolls", w: 70, align: "right" },
       { label: "Total Quantity", w: 90, align: "right" }
     ];
@@ -575,8 +592,9 @@ export default function DailyInventoryQuantity() {
       const qtyStr = `${parseFloat(item.totalWeight).toFixed(2)} ${item.unit}`;
       const rowVals = [
         (idx + 1).toString(),
-        String(item.name).length > 42 ? String(item.name).substring(0, 39) + "..." : item.name,
+        String(item.name).length > 35 ? String(item.name).substring(0, 32) + "..." : item.name,
         item.shade,
+        getSupplierInitials(item.supplier),
         item.totalRolls.toString(),
         qtyStr
       ];
@@ -962,6 +980,7 @@ export default function DailyInventoryQuantity() {
                 <th>Item Description</th>
                 <th>Shade</th>
                 <th>Lot No</th>
+                <th>Party</th>
                 <th>Store Location</th>
                 <th style={{ textAlign: 'right' }}>Quantity</th>
                 <th style={{ textAlign: 'center' }}>Unit</th>
@@ -971,7 +990,7 @@ export default function DailyInventoryQuantity() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} style={{ textAlign: 'center', padding: '60px 0' }}>
+                  <td colSpan={11} style={{ textAlign: 'center', padding: '60px 0' }}>
                     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
                       <RefreshCw size={24} className="spin-animation" style={{ color: 'var(--primary)' }} />
                       <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Loading daily database report...</span>
@@ -980,7 +999,7 @@ export default function DailyInventoryQuantity() {
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={11}>
                     <div className="empty-state" style={{ padding: '60px 20px', textAlign: 'center' }}>
                       <div style={{
                         display: 'inline-flex',
@@ -1017,6 +1036,9 @@ export default function DailyInventoryQuantity() {
                     <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</td>
                     <td>{item.shade}</td>
                     <td style={{ fontWeight: 600 }}>{item.lotNo}</td>
+                    <td style={{ fontWeight: 600 }} title={item.supplier}>
+                      {getSupplierInitials(item.supplier)}
+                    </td>
                     <td>
                       <span style={{ fontWeight: 700, color: 'var(--secondary)' }}>
                         {item.location}
@@ -1036,7 +1058,7 @@ export default function DailyInventoryQuantity() {
               )}
               {!loading && filteredData.length > 0 && (
                 <tr style={{ backgroundColor: 'var(--bg-hover)', fontWeight: 800, borderTop: '2.5px double var(--border)', borderBottom: '2.5px double var(--border)' }}>
-                  <td colSpan={7} style={{ textAlign: 'right', padding: '10px 15px', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>
+                  <td colSpan={8} style={{ textAlign: 'right', padding: '10px 15px', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>
                     Total:
                   </td>
                   <td style={{ textAlign: 'right', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>

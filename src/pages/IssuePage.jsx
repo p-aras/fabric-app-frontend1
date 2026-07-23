@@ -942,7 +942,7 @@ const FabricIssued = () => {
 
     // Check if barcode is already scanned in the current session
     const isAlreadyScanned = Object.values(scannedBarcodes).some(barcodes => 
-      barcodes.includes(barcodeId)
+      Array.isArray(barcodes) && barcodes.includes(barcodeId)
     );
     if (isAlreadyScanned) {
       alert(`❌ DUPLICATE SCAN REJECTED!\n\nBarcode ID: ${barcodeId}\n\nThis barcode has already been scanned in this session.`);

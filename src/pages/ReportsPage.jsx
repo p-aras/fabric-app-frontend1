@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { store } from '../store.js';
-import { BarChart3, Download, FileText, TrendingUp, Package, Warehouse, Users, Grid } from 'lucide-react';
+import { BarChart3, Download, FileText, TrendingUp, Package, Warehouse, Users, Grid, Layers } from 'lucide-react';
 import Parta from './Parta.jsx';
+import TableWiseClassification from './TableWiseClassification.jsx';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -107,6 +108,7 @@ export default function ReportsPage() {
     { id: 'movement', label: 'Movement Report', icon: TrendingUp },
     { id: 'supplier', label: 'Supplier Report', icon: Users },
     { id: 'parta', label: 'Parta Matrix', icon: Grid },
+    { id: 'table-wise', label: 'Table Wise Classification', icon: Layers },
   ];
 
   return (
@@ -117,7 +119,7 @@ export default function ReportsPage() {
           <h1>Reports & Analytics</h1>
           <p>Comprehensive reports for stock, warehouse utilization and material movements.</p>
         </div>
-        {tab !== 'parta' && (
+        {tab !== 'parta' && tab !== 'table-wise' && (
           <div className="page-actions">
             <button className="btn btn-secondary btn-sm" id="export-report-btn"
               onClick={() => {
@@ -382,6 +384,11 @@ export default function ReportsPage() {
       {/* PARTA MATRIX REPORT */}
       {tab === 'parta' && (
         <Parta />
+      )}
+
+      {/* TABLE WISE CLASSIFICATION REPORT */}
+      {tab === 'table-wise' && (
+        <TableWiseClassification />
       )}
     </div>
   );

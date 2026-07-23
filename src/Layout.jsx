@@ -40,6 +40,7 @@ const NAV = [
     icon: BarChart3,
     children: [
       { path: '/reports/dyeing-shortage', icon: Droplets, label: 'Dyeing Shortage Report' },
+      { path: '/reports/table-wise-classification', icon: Layers, label: 'Table Wise Classification' },
       {
         label: 'Daily Inventory Report',
         icon: FileText,

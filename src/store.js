@@ -404,6 +404,13 @@ export const store = {
     }).then(handleResponse);
   },
 
+  getTableWiseClassification: async () => {
+    return fetch(`${BASE_URL}/reports/table-wise-classification`, {
+      method: 'GET',
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
   getDailyCuttingCompletedReport: async (refresh = false) => {
     return fetch(`${BASE_URL}/reports/daily-cutting-completed?refresh=${refresh}`, {
       method: 'GET',
