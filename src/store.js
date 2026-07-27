@@ -1,4 +1,5 @@
-export const BASE_URL = 'https://fabric-app-backend-new.onrender.com/api';
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://fabric-app-backend-new.onrender.com/api';
+
 
 const getHeaders = () => {
   const token = localStorage.getItem('twms_token');
@@ -108,7 +109,7 @@ export const store = {
         params.append(key, val);
       }
     });
-    
+
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return fetch(`${BASE_URL}/materials${queryString}`, {
       headers: getHeaders(),
@@ -554,5 +555,91 @@ export const store = {
       method: 'DELETE',
       headers: getHeaders()
     }).then(handleResponse);
+  },
+
+  // --- SPECIAL ISSUANCE APPROVAL REQUESTS ---
+  createApprovalRequest: async (payload) => {
+    try {
+      const res = await fetch(`${BASE_URL}/approval-requests`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(payload)
+      }).then(handleResponse);
+      if (res && res.data) {
+        // Also sync local backup
+        const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+        localStorage.setItem('twms_approval_requests', JSON.stringify([res.data, ...localList]));
+        return res;
+      }
+    } catch (e) {
+      console.warn('Backend offline, creating approval request locally:', e);
+    }
+    // Local fallback
+    const localReq = {
+      id: Date.now(),
+      lotNumber: payload.lotNumber,
+      tableNo: payload.tableNo,
+      requestedBy: payload.requestedBy,
+      reason: payload.reason || 'Special Issuance Eligibility Override',
+      requestedWeight: payload.requestedWeight || 0,
+      status: 'Pending',
+      createdAt: new Date().toISOString()
+    };
+    const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+    localStorage.setItem('twms_approval_requests', JSON.stringify([localReq, ...localList]));
+    return { success: true, data: localReq };
+  },
+
+  getApprovalRequests: async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/approval-requests`, {
+        method: 'GET',
+        headers: getHeaders()
+      }).then(handleResponse);
+      if (res && res.data) {
+        localStorage.setItem('twms_approval_requests', JSON.stringify(res.data));
+        return res.data;
+      }
+    } catch (e) {
+      console.warn('Backend offline, fetching approval requests locally:', e);
+    }
+    return JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+  },
+
+  respondApprovalRequest: async (id, status, respondedBy) => {
+    try {
+      const res = await fetch(`${BASE_URL}/approval-requests/${id}/respond`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify({ status, respondedBy })
+      }).then(handleResponse);
+      if (res && res.data) {
+        // Sync local list
+        const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+        const updated = localList.map(item => String(item.id) === String(id) ? { ...item, status, respondedBy, respondedAt: new Date().toISOString() } : item);
+        localStorage.setItem('twms_approval_requests', JSON.stringify(updated));
+        return res;
+      }
+    } catch (e) {
+      console.warn('Backend offline, responding approval request locally:', e);
+    }
+    const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+    const updated = localList.map(item => String(item.id) === String(id) ? { ...item, status, respondedBy, respondedAt: new Date().toISOString() } : item);
+    localStorage.setItem('twms_approval_requests', JSON.stringify(updated));
+    return { success: true, data: updated.find(item => String(item.id) === String(id)) };
+  },
+
+  checkApprovalStatus: async (id) => {
+    try {
+      const res = await fetch(`${BASE_URL}/approval-requests/status/${id}`, {
+        method: 'GET',
+        headers: getHeaders()
+      }).then(handleResponse);
+      if (res && res.data) return res.data;
+    } catch (e) {
+      console.warn('Backend status check fallback to local:', e);
+    }
+    const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+    return localList.find(item => String(item.id) === String(id)) || null;
   }
 };

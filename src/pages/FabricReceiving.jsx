@@ -190,6 +190,96 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
     }
   };
 
+  const handleNoFabricReturn = async (shade) => {
+    setSubmitting(true);
+    try {
+      const receivingRecord = {
+        lotNumber: selectedJob['Lot Number'],
+        fabricName: selectedJob['Fabric'] || 'Unknown',
+        cmfName: 'N/A',
+        party: 'N/A',
+        shade: shade || 'N/A',
+        barcodeId: `NO-RETURN-${shade || 'ALL'}-${Date.now()}`,
+        originalBarcodeId: 'NO_RETURN',
+        returnedWeight: 0.00,
+        weight: 0.00,
+        returnQuantity: 0,
+        reason: 'No Fabric Return',
+        receivedBy: 'Production Manager',
+        receivedAt: new Date().toISOString(),
+        returnDate: new Date().toISOString(),
+        originalIssuedWeight: 0.00,
+        totalReturnedWeight: 0.00
+      };
+
+      const response = await fetch(`${API_BASE_URL}/store-fabric-receiving`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(receivingRecord)
+      });
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      const resData = await response.json();
+
+      if (resData.success) {
+        alert(`✅ Successfully recorded: No Fabric Return for Shade: ${shade || 'All'}`);
+        await loadIssuedRolls();
+        await loadReceivingHistory();
+      } else {
+        alert('Failed to save return: ' + resData.message);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error recording no return: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleNoKharchaReturn = async () => {
+    setSubmitting(true);
+    try {
+      const receivingRecord = {
+        lotNumber: selectedJob['Lot Number'],
+        fabricName: 'Kharcha - NO RETURN',
+        cmfName: 'Accessories Dept',
+        party: 'Accessories Dept',
+        shade: 'N/A',
+        barcodeId: `NO-RETURN-KHARCHA-${Date.now()}`,
+        originalBarcodeId: 'NO_RETURN_KHARCHA',
+        returnedWeight: 0.00,
+        weight: 0.00,
+        returnQuantity: 0,
+        reason: 'No Kharcha Returned',
+        receivedBy: 'Production Manager',
+        receivedAt: new Date().toISOString(),
+        returnDate: new Date().toISOString(),
+        originalIssuedWeight: 0.00,
+        totalReturnedWeight: 0.00
+      };
+
+      const response = await fetch(`${API_BASE_URL}/store-fabric-receiving`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(receivingRecord)
+      });
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      const resData = await response.json();
+
+      if (resData.success) {
+        alert(`✅ Successfully recorded: No Kharcha Returned`);
+        await loadIssuedRolls();
+        await loadReceivingHistory();
+      } else {
+        alert('Failed to save return: ' + resData.message);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error recording no return: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleShadeReturn = async (shade) => {
     const rollsForShade = rollsByShade[shade] || [];
     if (rollsForShade.length === 0) {
@@ -865,23 +955,41 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                                   }}
                                 />
                               </div>
-                              <button
-                                onClick={() => handleShadeReturn(shade)}
-                                disabled={submitting || !shadeReturnWeight[shade]}
-                                style={{
-                                  padding: '10px 24px',
-                                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  cursor: 'pointer',
-                                  fontWeight: '600',
-                                  opacity: (submitting || !shadeReturnWeight[shade]) ? 0.6 : 1,
-                                  minWidth: '120px'
-                                }}
-                              >
-                                {submitting ? 'Processing...' : `Return ${shade}`}
-                              </button>
+                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                <button
+                                  onClick={() => handleShadeReturn(shade)}
+                                  disabled={submitting || !shadeReturnWeight[shade]}
+                                  style={{
+                                    padding: '10px 24px',
+                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
+                                    opacity: (submitting || !shadeReturnWeight[shade]) ? 0.6 : 1,
+                                    minWidth: '120px'
+                                  }}
+                                >
+                                  {submitting ? 'Processing...' : `Return ${shade}`}
+                                </button>
+                                <button
+                                  onClick={() => handleNoFabricReturn(shade)}
+                                  disabled={submitting}
+                                  style={{
+                                    padding: '10px 24px',
+                                    background: '#71717a',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
+                                    minWidth: '120px'
+                                  }}
+                                >
+                                  No Fabric for Return
+                                </button>
+                              </div>
                             </div>
 
                             {/* Roll details expandable */}
@@ -1184,6 +1292,23 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                 <div className="kharcha-return-section" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: '300px' }}>
                     <h4 style={{ margin: '0 0 16px 0', color: '#333' }}>💰 Issued Kharcha Items</h4>
+                    <button
+                      onClick={handleNoKharchaReturn}
+                      disabled={submitting}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: '#71717a',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        marginBottom: '16px'
+                      }}
+                    >
+                      No Kharcha Returned
+                    </button>
                     {issuedKharcha.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '40px', background: '#f9f9f9', borderRadius: '8px' }}>
                         <p>No issued Kharcha items found for this lot.</p>

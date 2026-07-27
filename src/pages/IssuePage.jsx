@@ -109,6 +109,20 @@ const FabricIssued = () => {
   const [shadeTableNumbers, setShadeTableNumbers] = useState({});
   const [defaultTable, setDefaultTable] = useState('Table 1');
   const [allTables, setAllTables] = useState([]);
+  
+  // Eligibility verification states
+  const [eligibilityChecked, setEligibilityChecked] = useState(false);
+  const [tableClassificationData, setTableClassificationData] = useState([]);
+  const [loadingEligibility, setLoadingEligibility] = useState(false);
+  const [eligibilityError, setEligibilityError] = useState(null);
+  const [openIssuedLotNo, setOpenIssuedLotNo] = useState('');
+  
+  // Special approval states
+  const [specialApprovalModal, setSpecialApprovalModal] = useState(null); // { tableNo, lotsCount, lotNumbers }
+  const [specialApproverName, setSpecialApproverName] = useState('');
+  const [specialApprovalReason, setSpecialApprovalReason] = useState('');
+  const [specialApprovalData, setSpecialApprovalData] = useState(null); // { approvedBy, reason, tableNo, approvedAt }
+  const [pendingApprovalReqId, setPendingApprovalReqId] = useState(null);
 
   const displayedTables = useMemo(() => {
     let list = allTables.length > 0 ? [...allTables] : [];
@@ -345,10 +359,179 @@ const FabricIssued = () => {
     setLoading(false);
   };
 
+  const fetchTableClassification = async () => {
+    setLoadingEligibility(true);
+    setEligibilityError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/reports/table-wise-classification`);
+      if (!res.ok) throw new Error('Failed to fetch table wise classification');
+      const resData = await res.json();
+      if (resData.success && Array.isArray(resData.data)) {
+        setTableClassificationData(resData.data);
+      }
+    } catch (err) {
+      console.error('Error loading table capacity classification:', err);
+      setEligibilityError('Could not verify table classification data.');
+    } finally {
+      setLoadingEligibility(false);
+    }
+  };
+
   useEffect(() => {
     fetchSheetData();
     fetchAllIssuedBarcodes();
+    fetchTableClassification();
   }, []);
+
+  const handleSelectTable = (tableNo) => {
+    const tableData = tableClassificationData.find(
+      t => t.tableNumber.trim().toLowerCase() === tableNo.trim().toLowerCase()
+    );
+    
+    if (tableData && Array.isArray(tableData.lots) && tableData.lots.length >= 2) {
+      const lotNumbers = tableData.lots.map(l => l.lotNumber).join(', ');
+      setSpecialApprovalModal({
+        tableNo,
+        lotsCount: tableData.lots.length,
+        lotNumbers
+      });
+      setSpecialApproverName(defaultApproverName || loggedInUser?.name || '');
+      setSpecialApprovalReason('');
+      setPendingApprovalReqId(null);
+      return;
+    }
+
+    setSpecialApprovalData(null);
+    setDefaultTable(tableNo);
+    setEligibilityChecked(true);
+  };
+
+  const handleRequestAdminApproval = async () => {
+    if (!specialApproverName.trim()) {
+      alert('⚠️ Please enter Requester / Person Name.');
+      return;
+    }
+
+    try {
+      const res = await store.createApprovalRequest({
+        lotNumber: searchLot || openIssuedLotNo || 'LOT-NEW',
+        tableNo: specialApprovalModal.tableNo,
+        requestedBy: specialApproverName.trim(),
+        reason: specialApprovalReason.trim() || 'Eligibility Criteria Override'
+      });
+
+      if (res && res.data) {
+        setPendingApprovalReqId(res.data.id);
+      }
+    } catch (err) {
+      alert('Failed to send approval request: ' + err.message);
+    }
+  };
+
+  // Poll approval status when an approval request is pending
+  useEffect(() => {
+    if (!pendingApprovalReqId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const req = await store.checkApprovalStatus(pendingApprovalReqId);
+        if (req) {
+          if (req.status === 'Approved') {
+            setSpecialApprovalData({
+              approvedBy: req.respondedBy || 'Admin',
+              reason: req.reason || 'Admin Approved',
+              tableNo: req.tableNo,
+              approvedAt: req.respondedAt || new Date().toISOString()
+            });
+            setDefaultTable(req.tableNo);
+            setEligibilityChecked(true);
+            setSpecialApprovalModal(null);
+            setPendingApprovalReqId(null);
+            alert(`✅ Special Approval Granted by Admin (${req.respondedBy || 'Admin'})!\n\nYou are now allowed to issue weight & stickers against ${req.tableNo}.`);
+          } else if (req.status === 'Rejected') {
+            setSpecialApprovalModal(null);
+            setPendingApprovalReqId(null);
+            alert(`❌ Approval Request REJECTED by Admin (${req.respondedBy || 'Admin'}).\n\nIssuance weight is NOT allowed against this table.`);
+          }
+        }
+      } catch (err) {
+        console.error('Error polling approval status:', err);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [pendingApprovalReqId]);
+
+  const handleOpenIssuedLot = (lotNo) => {
+    if (!lotNo.trim()) return;
+    
+    let foundTable = null;
+    for (const group of tableClassificationData) {
+      if (group.lots && group.lots.some(l => String(l.lotNumber).trim() === lotNo.trim())) {
+        foundTable = group.tableNumber;
+        break;
+      }
+    }
+    
+    if (foundTable) {
+      setDefaultTable(foundTable);
+      setEligibilityChecked(true);
+      setTimeout(() => {
+        performSearch(lotNo.trim(), foundTable);
+      }, 50);
+    } else {
+      alert(`Lot Number ${lotNo} is not active on any cutting table. Please select an eligible table from the grid below to create a new issuance.`);
+    }
+  };
+
+  const performSearch = async (lotVal, tableVal) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/job-orders/search/${lotVal.trim()}`);
+      if (!response.ok) {
+        throw new Error('Lot Number not found');
+      }
+
+      const resData = await response.json();
+      if (resData.success && resData.data) {
+        const found = resData.data;
+        setSelectedJob(found);
+        setIssueQuantity({});
+        setIssueWeight({});
+        setSelectedShades({});
+        setScannedBarcodes({});
+        setFabricApprovals({});
+        setDefaultApproverName('');
+        setMatchingModal(null);
+        setLotScanningAllowed(null);
+        setLotMatchingStatus(null);
+        setMatchingPassedBy('');
+        
+        // Auto-assign all shades to the selected table
+        const initialTables = {};
+        const allShades = getShadesWithIds(found['Shade']);
+        allShades.forEach(s => {
+          initialTables[s.id] = tableVal;
+        });
+        setShadeTableNumbers(initialTables);
+        setDefaultTable(tableVal);
+        
+        setKharchaItems([{ id: Date.now(), item: '', weight: '', shade: '', mode: 'manual', barcodeId: '', loading: false }]);
+        setNoKharcha(false);
+        setHistoryPage(1);
+        setHasMoreHistory(true);
+        
+        await loadIssueHistoryPaginated(found['Lot Number'], 1, true);
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Error searching lot');
+      setEligibilityChecked(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!searchLot.trim()) {
@@ -1731,7 +1914,9 @@ const FabricIssued = () => {
       kharchaItems: validKharchaItems,
       barcodeWeights: scannedBarcodeWeights,
       matchingStatus: lotMatchingStatus || null,
-      matchingPassedBy: matchingPassedBy || null
+      matchingPassedBy: matchingPassedBy || null,
+      specialApproval: specialApprovalData || null,
+      specialApprovedBy: specialApprovalData?.approvedBy || null
     };
 
     console.log('📦 Issuance Record with Barcodes:', issuanceRecord);
@@ -2035,6 +2220,402 @@ const FabricIssued = () => {
     );
   }
 
+  if (!eligibilityChecked) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#ffffff',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        padding: '30px 40px',
+        boxSizing: 'border-box'
+      }}>
+        {/* Style block for animations */}
+        <style>{`
+          .table-card {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 16px 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 110px;
+            box-sizing: border-box;
+          }
+          .table-card:hover {
+            border-color: #0f172a;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+          }
+          .table-card.locked {
+            background-color: #fef2f2;
+            border: 2px solid #ef4444;
+          }
+          .table-card.eligible {
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+          }
+          .table-card.has-one {
+            background-color: #fffbeb;
+            border: 1px solid #f59e0b;
+          }
+        `}</style>
+
+        {/* Top Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: '2px solid #0f172a',
+          paddingBottom: '16px',
+          marginBottom: '24px'
+        }}>
+          <div>
+            <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', margin: 0, textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
+              Verify Issuance Eligibility
+            </h1>
+            <p style={{ fontSize: '13px', color: '#475569', margin: '4px 0 0 0', fontWeight: '500' }}>
+              Select an active cutting table. Tables with 2 or more uncut lots are locked in the frontend to avoid overloading.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #0f172a', borderRadius: '8px', overflow: 'hidden', background: '#ffffff' }}>
+              <input
+                type="text"
+                placeholder="OPEN ISSUED LOT..."
+                value={openIssuedLotNo}
+                onChange={e => setOpenIssuedLotNo(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && handleOpenIssuedLot(openIssuedLotNo)}
+                style={{
+                  border: 'none',
+                  padding: '10px 14px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  outline: 'none',
+                  width: '180px'
+                }}
+              />
+              <button
+                onClick={() => handleOpenIssuedLot(openIssuedLotNo)}
+                style={{
+                  border: 'none',
+                  backgroundColor: '#0f172a',
+                  color: '#ffffff',
+                  padding: '10px 16px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                🔍 OPEN
+              </button>
+            </div>
+            <button
+              onClick={() => window.history.back()}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#0f172a',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                fontSize: '13px',
+                textTransform: 'uppercase'
+              }}
+            >
+              ← Exit Portal
+            </button>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {loadingEligibility ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%' }}>
+              <div style={{ width: '40px', height: '40px', border: '4px solid #f3f3f3', borderTop: '4px solid #0f172a', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+              <p style={{ fontWeight: '700', color: '#0f172a', marginTop: '12px' }}>Checking table queues...</p>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+              gap: '20px',
+              paddingBottom: '20px'
+            }}>
+              {displayedTables.map(t => {
+                const classification = tableClassificationData.find(
+                  item => item.tableNumber.trim().toLowerCase() === t.name.trim().toLowerCase()
+                );
+                
+                const activeLots = classification?.lots || [];
+                const lotsCount = activeLots.length;
+                const isLocked = lotsCount >= 2;
+
+                let statusBadgeText = 'VACANT';
+                let statusBadgeColor = '#10b981';
+                let cardClass = 'table-card eligible';
+
+                if (lotsCount === 1) {
+                  statusBadgeText = '1 LOT ACTIVE';
+                  statusBadgeColor = '#d97706';
+                  cardClass = 'table-card has-one';
+                } else if (isLocked) {
+                  statusBadgeText = 'FULL / LOCKED';
+                  statusBadgeColor = '#ef4444';
+                  cardClass = 'table-card locked';
+                }
+
+                return (
+                  <div
+                    key={t.id}
+                    className={cardClass}
+                    onClick={() => handleSelectTable(t.name)}
+                  >
+                    <div>
+                      {/* Name & Badge */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>
+                          {t.name.toUpperCase()}
+                        </span>
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: '800',
+                          color: statusBadgeColor,
+                          letterSpacing: '0.5px'
+                        }}>
+                          ● {statusBadgeText}
+                        </span>
+                      </div>
+
+                      {/* Lots */}
+                      <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: '700', marginBottom: '12px' }}>
+                        {lotsCount > 0 ? (
+                          <span>Lots: {activeLots.map(l => l.lotNumber).join(', ')}</span>
+                        ) : (
+                          <span style={{ color: '#64748b', fontWeight: '500', fontStyle: 'italic' }}>No pending cuts</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Staff */}
+                    <div style={{
+                      borderTop: '1px solid #cbd5e1',
+                      paddingTop: '8px',
+                      fontSize: '11px',
+                      color: '#475569',
+                      fontWeight: '600'
+                    }}>
+                      <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        SUP: <span style={{ color: '#0f172a' }}>{(t.Supervisor?.name || 'NONE').toUpperCase()}</span>
+                      </div>
+                      <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        CUT: <span style={{ color: '#0f172a' }}>{(t.CutterMaster?.name || 'NONE').toUpperCase()}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Special Approval Modal for Locked Tables / Eligibility Override */}
+        {specialApprovalModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            boxSizing: 'border-box'
+          }}>
+            <div style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '28px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              border: '1px solid #e2e8f0',
+              boxSizing: 'border-box'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <span style={{ fontSize: '28px' }}>🔐</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>
+                    Send Admin Approval Request
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>
+                    Eligibility Override Permission for {specialApprovalModal.tableNo}
+                  </p>
+                </div>
+              </div>
+
+              <div style={{
+                backgroundColor: '#fef2f2',
+                borderLeft: '4px solid #ef4444',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                fontSize: '13px',
+                color: '#991b1b',
+                lineHeight: '1.5'
+              }}>
+                <strong>⚠️ Table Capacity Locked:</strong> {specialApprovalModal.tableNo} currently has {specialApprovalModal.lotsCount} active lots pending cutting:
+                <div style={{ fontWeight: '700', marginTop: '4px', color: '#7f1d1d' }}>
+                  Active Lots: {specialApprovalModal.lotNumbers}
+                </div>
+                Sending an approval request will notify the Admin Panel to ALLOW or REJECT issuance against this table.
+              </div>
+
+              {pendingApprovalReqId ? (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '24px 16px',
+                  backgroundColor: '#f0f9ff',
+                  border: '2px dashed #0284c7',
+                  borderRadius: '12px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{
+                    width: '36px',
+                    height: '36px',
+                    border: '4px solid #e0f2fe',
+                    borderTop: '4px solid #0284c7',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    margin: '0 auto 12px auto'
+                  }}></div>
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '800', color: '#0369a1' }}>
+                    ⏳ Approval Request Sent to Admin Panel
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#0284c7', lineHeight: '1.4' }}>
+                    Notification is active for Admin review. Once an Admin clicks <strong>ALLOW</strong> in the Admin Panel / Topbar, this page will automatically unlock and allow issuing weight.
+                  </p>
+                  <button
+                    onClick={() => setPendingApprovalReqId(null)}
+                    style={{
+                      marginTop: '16px',
+                      padding: '6px 14px',
+                      backgroundColor: '#e0f2fe',
+                      color: '#0369a1',
+                      border: '1px solid #7dd3fc',
+                      borderRadius: '6px',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel Request
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
+                      Requester / Person Name <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Enter your name / supervisor name..."
+                      value={specialApproverName}
+                      onChange={(e) => setSpecialApproverName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        fontSize: '14px',
+                        borderRadius: '8px',
+                        border: '2px solid #cbd5e1',
+                        outline: 'none',
+                        fontWeight: '600',
+                        boxSizing: 'border-box'
+                      }}
+                      autoFocus
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '24px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
+                      Reason for Special Issuance (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Urgent rush order, supervisor override..."
+                      value={specialApprovalReason}
+                      onChange={(e) => setSpecialApprovalReason(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        fontSize: '14px',
+                        borderRadius: '8px',
+                        border: '2px solid #cbd5e1',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setSpecialApprovalModal(null)}
+                  style={{
+                    padding: '10px 18px',
+                    backgroundColor: '#f1f5f9',
+                    color: '#475569',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    fontSize: '13px'
+                  }}
+                >
+                  Close
+                </button>
+                {!pendingApprovalReqId && (
+                  <button
+                    onClick={handleRequestAdminApproval}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#2563eb',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontWeight: '800',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)'
+                    }}
+                  >
+                    🚀 Send Request to Admin Panel
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="fabric-issued-container">
 
@@ -2043,7 +2624,16 @@ const FabricIssued = () => {
 
           {/* Left: Back button */}
           <button
-            onClick={() => window.history.back()}
+            onClick={() => {
+              if (eligibilityChecked) {
+                setEligibilityChecked(false);
+                setSelectedJob(null);
+                setEligibilityLot('');
+                setEligibilityError(null);
+              } else {
+                window.history.back();
+              }
+            }}
             className="hero-back-btn"
           >
             ← Back
@@ -2088,6 +2678,45 @@ const FabricIssued = () => {
 
       {selectedJob ? (
         <div className="dashboard">
+
+          {/* ── Special Permission Approval Banner ─────────────────────── */}
+          {specialApprovalData && (
+            <div style={{
+              backgroundColor: '#f0fdf4',
+              border: '1.5px solid #86efac',
+              borderRadius: '12px',
+              padding: '14px 20px',
+              marginBottom: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxShadow: '0 4px 12px rgba(22, 163, 74, 0.08)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '24px' }}>🔓</span>
+                <div>
+                  <div style={{ fontWeight: '800', color: '#166534', fontSize: '15px' }}>
+                    Special Permission Granted by: {specialApprovalData.approvedBy}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#15803d', marginTop: '2px', fontWeight: '500' }}>
+                    Table: <strong>{specialApprovalData.tableNo}</strong> | Reason: {specialApprovalData.reason || 'Eligibility Criteria Override'}
+                  </div>
+                </div>
+              </div>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '800',
+                backgroundColor: '#dcfce7',
+                color: '#15803d',
+                padding: '6px 12px',
+                borderRadius: '20px',
+                border: '1px solid #86efac',
+                letterSpacing: '0.5px'
+              }}>
+                SPECIAL PERMISSION GRANTED
+              </span>
+            </div>
+          )}
 
           {/* ── Global Matching Status Banner ─────────────────────────── */}
           {lotMatchingStatus ? (

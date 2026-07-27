@@ -6,11 +6,13 @@ import {
   ArrowLeftRight, BarChart3, Settings, ChevronDown,
   Search, Bell, Sun, Moon, Menu, LogOut, ChevronRight,
   Printer, Sparkles, Droplets, Grid, History, AlertCircle,
-  Layers, Ruler, Scissors, FileText, Database, ClipboardList
+  Layers, Ruler, Scissors, FileText, Database, ClipboardList,
+  ShieldCheck
 } from 'lucide-react';
 
 const NAV = [
   { path: '/', icon: Home, label: 'Dashboard Home' },
+  { path: '/approvals', icon: ShieldCheck, label: 'Admin Approval Panel' },
   { path: '/materials', icon: Package, label: 'Material Master' },
   { path: '/old-inventory', icon: History, label: ' Old Inventory' },
   {
@@ -75,16 +77,19 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
   const [showNotifs, setShowNotifs] = useState(false);
   const [stats, setStats] = useState({ rooms: 0, racks: 0, capacity: 0 });
   const [pendingTransfers, setPendingTransfers] = useState([]);
+  const [pendingApprovalRequests, setPendingApprovalRequests] = useState([]);
   const [materials, setMaterials] = useState([]);
 
   const loadPendingData = async () => {
     try {
-      const [transfersData, matsData] = await Promise.all([
+      const [transfersData, matsData, approvalReqs] = await Promise.all([
         store.getTransfers(),
-        store.getMaterials()
+        store.getMaterials(),
+        store.getApprovalRequests()
       ]);
       setPendingTransfers((transfersData || []).filter(t => t.status === 'Pending'));
       setMaterials(matsData || []);
+      setPendingApprovalRequests((approvalReqs || []).filter(r => r.status === 'Pending'));
     } catch (e) {
       console.error('Error loading pending data:', e);
     }
@@ -92,7 +97,7 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
 
   useEffect(() => {
     loadPendingData();
-    const interval = setInterval(loadPendingData, 10000);
+    const interval = setInterval(loadPendingData, 5000);
     return () => clearInterval(interval);
   }, [location.pathname]);
 
@@ -111,6 +116,15 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
       loadPendingData();
     } catch (e) {
       alert(e.message || 'Error rejecting transfer');
+    }
+  };
+
+  const handleRespondApproval = async (id, status) => {
+    try {
+      await store.respondApprovalRequest(id, status, currentUser?.name || 'Admin');
+      loadPendingData();
+    } catch (e) {
+      alert(e.message || 'Error responding to approval request');
     }
   };
 
@@ -313,7 +327,7 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
             <div style={{ position: 'relative' }}>
               <button className="topbar-btn" id="notifications-btn" title="Notifications" onClick={() => setShowNotifs(s => !s)}>
                 <Bell size={17} />
-                {pendingTransfers.length > 0 && <span className="notification-badge" />}
+                {(pendingTransfers.length > 0 || pendingApprovalRequests.length > 0) && <span className="notification-badge" />}
               </button>
 
               {showNotifs && (
@@ -323,7 +337,7 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
                     position: 'absolute',
                     top: '44px',
                     right: '0px',
-                    width: '320px',
+                    width: '350px',
                     zIndex: 1000,
                     boxShadow: 'var(--shadow-lg)',
                     border: '1px solid var(--border)',
@@ -333,53 +347,99 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
                   <div className="card-header" style={{ padding: '10px 14px', background: 'var(--bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>Pending Approvals</div>
                     <span className="badge badge-primary" style={{ fontSize: 10, fontWeight: 700 }}>
-                      {pendingTransfers.length}
+                      {pendingTransfers.length + pendingApprovalRequests.length}
                     </span>
                   </div>
-                  <div className="card-body" style={{ padding: 0, maxHeight: '280px', overflowY: 'auto' }}>
-                    {pendingTransfers.length === 0 ? (
-                      <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                        No pending transfer requests.
+                  <div className="card-body" style={{ padding: 0, maxHeight: '340px', overflowY: 'auto' }}>
+                    {/* Special Issuance Approvals */}
+                    {pendingApprovalRequests.length > 0 && (
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-light)', borderBottom: '1px solid var(--border)', fontSize: 11, fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🔐 Special Issuance Requests ({pendingApprovalRequests.length})
                       </div>
-                    ) : (
-                      pendingTransfers.map(t => (
-                        <div key={t.id} style={{ padding: 12, borderBottom: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left' }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {t.transferredBy} requested:
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                            Material: <strong>{getMaterialName(t.materialId)}</strong>
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                            Qty: <strong>{t.rolls} Rolls</strong>
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            Route: <span className="badge badge-secondary" style={{ padding: '2px 4px', fontSize: 10 }}>{t.fromLocation}</span> → <span className="badge badge-primary" style={{ padding: '2px 4px', fontSize: 10 }}>{t.toLocation}</span>
-                          </div>
-                          {currentUser?.role === 'Admin' ? (
-                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                              <button
-                                className="btn btn-success btn-sm"
-                                style={{ flex: 1, padding: '4px 8px', fontSize: 11 }}
-                                onClick={() => handleApprove(t.id)}
-                              >
-                                Yes (Approve)
-                              </button>
-                              <button
-                                className="btn btn-danger btn-sm"
-                                style={{ flex: 1, padding: '4px 8px', fontSize: 11 }}
-                                onClick={() => handleReject(t.id)}
-                              >
-                                No (Reject)
-                              </button>
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 650 }}>
-                              Waiting for Admin Approval
-                            </div>
-                          )}
+                    )}
+                    {pendingApprovalRequests.map(req => (
+                      <div key={`app-${req.id}`} style={{ padding: 12, borderBottom: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left', background: 'rgba(239, 68, 68, 0.03)' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Lot: {req.lotNumber}</span>
+                          <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 800 }}>Table: {req.tableNo}</span>
                         </div>
-                      ))
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          Requested By: <strong>{req.requestedBy}</strong>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          "{req.reason || 'Eligibility Criteria Override'}"
+                        </div>
+                        {currentUser?.role === 'Admin' ? (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                            <button
+                              className="btn btn-success btn-sm"
+                              style={{ flex: 1, padding: '5px 8px', fontSize: 11, fontWeight: 800, backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                              onClick={() => handleRespondApproval(req.id, 'Approved')}
+                            >
+                              ✅ ALLOW
+                            </button>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              style={{ flex: 1, padding: '5px 8px', fontSize: 11, fontWeight: 800, backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                              onClick={() => handleRespondApproval(req.id, 'Rejected')}
+                            >
+                              ❌ REJECT
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 650 }}>
+                            Waiting for Admin to ALLOW or REJECT
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Pending Transfers */}
+                    {pendingTransfers.length > 0 && (
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-light)', borderBottom: '1px solid var(--border)', fontSize: 11, fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        📦 Material Transfers ({pendingTransfers.length})
+                      </div>
+                    )}
+                    {pendingTransfers.map(t => (
+                      <div key={`trf-${t.id}`} style={{ padding: 12, borderBottom: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left' }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {t.transferredBy} requested transfer:
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          Material: <strong>{getMaterialName(t.materialId)}</strong> ({t.rolls} Rolls)
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          Route: <span className="badge badge-secondary" style={{ padding: '2px 4px', fontSize: 10 }}>{t.fromLocation}</span> → <span className="badge badge-primary" style={{ padding: '2px 4px', fontSize: 10 }}>{t.toLocation}</span>
+                        </div>
+                        {currentUser?.role === 'Admin' ? (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                            <button
+                              className="btn btn-success btn-sm"
+                              style={{ flex: 1, padding: '4px 8px', fontSize: 11 }}
+                              onClick={() => handleApprove(t.id)}
+                            >
+                              Yes (Approve)
+                            </button>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              style={{ flex: 1, padding: '4px 8px', fontSize: 11 }}
+                              onClick={() => handleReject(t.id)}
+                            >
+                              No (Reject)
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 650 }}>
+                            Waiting for Admin Approval
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {pendingApprovalRequests.length === 0 && pendingTransfers.length === 0 && (
+                      <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                        No pending approval requests.
+                      </div>
                     )}
                   </div>
                 </div>

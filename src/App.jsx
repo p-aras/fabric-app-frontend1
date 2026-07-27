@@ -26,6 +26,7 @@ import MaterialAgainstPoForm from './pages/MaterialAgainstPoForm.jsx';
 import FabricPoAudit from './pages/FabricPoAudit.jsx';
 import ReAddMaterialForm from './pages/ReAddMaterialForm.jsx';
 import AttendancePage from './pages/AttendancePage.jsx';
+import ApprovalPanelPage from './pages/ApprovalPanelPage.jsx';
 
 
 
@@ -274,6 +275,7 @@ export default function App() {
               <Route path="/fabric-po-audit" element={<FabricPoAudit />} />
               <Route path="/re-add-material" element={<ReAddMaterialForm />} />
               <Route path="/attendance" element={<AttendancePage />} />
+              <Route path="/approvals" element={<ApprovalPanelPage />} />
 
 
 
