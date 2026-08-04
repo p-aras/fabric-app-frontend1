@@ -7,7 +7,7 @@ import {
   Search, Bell, Sun, Moon, Menu, LogOut, ChevronRight,
   Printer, Sparkles, Droplets, Grid, History, AlertCircle,
   Layers, Ruler, Scissors, FileText, Database, ClipboardList,
-  ShieldCheck
+  ShieldCheck, Scale
 } from 'lucide-react';
 
 const NAV = [
@@ -22,6 +22,7 @@ const NAV = [
       { path: '/fabric-sticker', icon: Printer, label: 'Material Add' },
       { path: '/dyeing-material', icon: Droplets, label: 'Dyeing Material' },
       { path: '/fabric-stock', icon: Ruler, label: 'Fabric Stock (Mtrs)' },
+      { path: '/fabric-stock-kgs', icon: Scale, label: 'Fabric Stock (KGs)' },
       { path: '/material-against-po', icon: FileText, label: 'Material Against PO' },
       { path: '/fabric-po-audit', icon: Database, label: 'Fabric PO Audit' },
       { path: '/re-add-material', icon: Printer, label: 'Re Add Material In Stock' }
