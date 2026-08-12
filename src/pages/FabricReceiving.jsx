@@ -57,14 +57,21 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
           (roll.totalReturnedWeight < roll.originalIssuedWeight)
         );
 
-        const transformedRolls = activeIssuedRolls.map(roll => ({
-          ...roll,
-          weight: roll.originalIssuedWeight,
-          remainingWeight: roll.originalIssuedWeight - roll.totalReturnedWeight,
-          availableToReturn: roll.originalIssuedWeight - roll.totalReturnedWeight,
-          returnedWeight: roll.totalReturnedWeight,
-          usedWeight: roll.fabricUsedForCutting
-        }));
+        const transformedRolls = activeIssuedRolls.map(roll => {
+          const returned = roll.totalReturnedWeight || 0;
+          const issued = roll.originalIssuedWeight || 0;
+          const available = Math.max(0, issued - returned);
+          const used = roll.fabricUsedForCutting !== undefined && roll.fabricUsedForCutting !== null ? roll.fabricUsedForCutting : available;
+          return {
+            ...roll,
+            weight: issued,
+            remainingWeight: available,
+            availableToReturn: available,
+            returnedWeight: returned,
+            usedWeight: used,
+            fabricUsedForCutting: used
+          };
+        });
 
         const rollsByShadeMap = transformedRolls.reduce((acc, roll) => {
           const shade = roll.shade || 'Unknown';
@@ -874,10 +881,10 @@ const FabricReceiving = ({ selectedJob, onClose, onReceiveComplete }) => {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       {Object.entries(rollsByShade).map(([shade, rolls]) => {
-                        const totalIssued = rolls.reduce((sum, roll) => sum + roll.originalIssuedWeight, 0);
+                        const totalIssued = rolls.reduce((sum, roll) => sum + (roll.originalIssuedWeight || 0), 0);
                         const totalReturned = rolls.reduce((sum, roll) => sum + (roll.totalReturnedWeight || 0), 0);
-                        const totalAvailable = totalIssued - totalReturned;
-                        const totalUsed = totalReturned;
+                        const totalAvailable = Math.max(0, totalIssued - totalReturned);
+                        const totalUsed = rolls.reduce((sum, roll) => sum + (roll.fabricUsedForCutting !== undefined && roll.fabricUsedForCutting !== null ? roll.fabricUsedForCutting : (roll.originalIssuedWeight - (roll.totalReturnedWeight || 0))), 0);
                         const rollCount = rolls.length;
 
                         return (

@@ -90,7 +90,19 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
       ]);
       setPendingTransfers((transfersData || []).filter(t => t.status === 'Pending'));
       setMaterials(matsData || []);
-      setPendingApprovalRequests((approvalReqs || []).filter(r => r.status === 'Pending'));
+
+      const approvedTables = new Set(
+        (approvalReqs || [])
+          .filter(r => r.status === 'Approved')
+          .map(r => r.tableNo ? r.tableNo.trim().toLowerCase() : '')
+      );
+
+      setPendingApprovalRequests(
+        (approvalReqs || []).filter(r => 
+          r.status === 'Pending' && 
+          !approvedTables.has(r.tableNo ? r.tableNo.trim().toLowerCase() : '')
+        )
+      );
     } catch (e) {
       console.error('Error loading pending data:', e);
     }

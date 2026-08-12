@@ -123,6 +123,7 @@ const FabricIssued = () => {
   const [specialApprovalReason, setSpecialApprovalReason] = useState('');
   const [specialApprovalData, setSpecialApprovalData] = useState(null); // { approvedBy, reason, tableNo, approvedAt }
   const [pendingApprovalReqId, setPendingApprovalReqId] = useState(null);
+  const [approvalRequests, setApprovalRequests] = useState([]);
 
   const displayedTables = useMemo(() => {
     let list = allTables.length > 0 ? [...allTables] : [];
@@ -359,6 +360,31 @@ const FabricIssued = () => {
     setLoading(false);
   };
 
+  const fetchApprovalRequests = useCallback(async () => {
+    try {
+      const data = await store.getApprovalRequests();
+      if (Array.isArray(data)) {
+        setApprovalRequests(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+          return data;
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching approval requests in IssuePage:', err);
+    }
+  }, []);
+
+  const getApprovedRequestForTable = useCallback((tableName) => {
+    if (!tableName || !Array.isArray(approvalRequests)) return null;
+    const norm = str => (str || '').replace(/\s+/g, '').toLowerCase();
+    const cleanName = norm(tableName);
+    return approvalRequests.find(r => 
+      r.tableNo && 
+      norm(r.tableNo) === cleanName && 
+      r.status === 'Approved'
+    ) || null;
+  }, [approvalRequests]);
+
   const fetchTableClassification = async () => {
     setLoadingEligibility(true);
     setEligibilityError(null);
@@ -381,14 +407,24 @@ const FabricIssued = () => {
     fetchSheetData();
     fetchAllIssuedBarcodes();
     fetchTableClassification();
-  }, []);
+    fetchApprovalRequests();
+
+    const interval = setInterval(() => {
+      fetchApprovalRequests();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [fetchApprovalRequests]);
 
   const handleSelectTable = (tableNo) => {
     const tableData = tableClassificationData.find(
       t => t.tableNumber.trim().toLowerCase() === tableNo.trim().toLowerCase()
     );
     
-    if (tableData && Array.isArray(tableData.lots) && tableData.lots.length >= 2) {
+    const approvedReq = getApprovedRequestForTable(tableNo);
+    const isApproved = Boolean(approvedReq);
+
+    if (tableData && Array.isArray(tableData.lots) && tableData.lots.length >= 2 && !isApproved && loggedInUser?.role !== 'Admin') {
       const lotNumbers = tableData.lots.map(l => l.lotNumber).join(', ');
       setSpecialApprovalModal({
         tableNo,
@@ -401,7 +437,17 @@ const FabricIssued = () => {
       return;
     }
 
-    setSpecialApprovalData(null);
+    if (approvedReq) {
+      setSpecialApprovalData({
+        approvedBy: approvedReq.respondedBy || 'Admin',
+        reason: approvedReq.reason || 'Admin Approved',
+        tableNo: approvedReq.tableNo,
+        approvedAt: approvedReq.respondedAt || new Date().toISOString()
+      });
+    } else {
+      setSpecialApprovalData(null);
+    }
+
     setDefaultTable(tableNo);
     setEligibilityChecked(true);
   };
@@ -422,6 +468,7 @@ const FabricIssued = () => {
 
       if (res && res.data) {
         setPendingApprovalReqId(res.data.id);
+        fetchApprovalRequests();
       }
     } catch (err) {
       alert('Failed to send approval request: ' + err.message);
@@ -447,10 +494,12 @@ const FabricIssued = () => {
             setEligibilityChecked(true);
             setSpecialApprovalModal(null);
             setPendingApprovalReqId(null);
+            fetchApprovalRequests();
             alert(`✅ Special Approval Granted by Admin (${req.respondedBy || 'Admin'})!\n\nYou are now allowed to issue weight & stickers against ${req.tableNo}.`);
           } else if (req.status === 'Rejected') {
             setSpecialApprovalModal(null);
             setPendingApprovalReqId(null);
+            fetchApprovalRequests();
             alert(`❌ Approval Request REJECTED by Admin (${req.respondedBy || 'Admin'}).\n\nIssuance weight is NOT allowed against this table.`);
           }
         }
@@ -460,7 +509,7 @@ const FabricIssued = () => {
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [pendingApprovalReqId]);
+  }, [pendingApprovalReqId, fetchApprovalRequests]);
 
   const handleOpenIssuedLot = (lotNo) => {
     if (!lotNo.trim()) return;
@@ -2268,6 +2317,14 @@ const FabricIssued = () => {
             background-color: #fffbeb;
             border: 1px solid #f59e0b;
           }
+          .table-card.approved-unlocked {
+            background-color: #f0fdf4;
+            border: 2px solid #10b981;
+          }
+          .table-card.approved-unlocked:hover {
+            border-color: #059669;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
+          }
         `}</style>
 
         {/* Top Header */}
@@ -2320,6 +2377,29 @@ const FabricIssued = () => {
               </button>
             </div>
             <button
+              onClick={() => {
+                fetchTableClassification();
+                fetchApprovalRequests();
+              }}
+              disabled={loadingEligibility}
+              style={{
+                padding: '10px 16px',
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                border: '2px solid #0f172a',
+                borderRadius: '8px',
+                fontWeight: '700',
+                cursor: loadingEligibility ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                opacity: loadingEligibility ? 0.7 : 1
+              }}
+            >
+              🔄 Refresh Tables
+            </button>
+            <button
               onClick={() => window.history.back()}
               style={{
                 padding: '10px 20px',
@@ -2341,9 +2421,22 @@ const FabricIssued = () => {
         {/* Main Content Area */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loadingEligibility ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%' }}>
-              <div style={{ width: '40px', height: '40px', border: '4px solid #f3f3f3', borderTop: '4px solid #0f172a', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-              <p style={{ fontWeight: '700', color: '#0f172a', marginTop: '12px' }}>Checking table queues...</p>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '65%', textAlign: 'center', padding: '30px' }}>
+              <div style={{
+                width: '54px',
+                height: '54px',
+                border: '5px solid #e2e8f0',
+                borderTop: '5px solid #0f172a',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+                marginBottom: '20px'
+              }}></div>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 8px 0' }}>
+                ⏳ Processing Table Queues & Admin Approvals...
+              </h3>
+              <p style={{ fontSize: '13px', color: '#64748b', margin: 0, maxWidth: '440px', lineHeight: '1.5', fontWeight: '500' }}>
+                Fetching active uncut lot assignments and synchronizing table permissions with backend database...
+              </p>
             </div>
           ) : (
             <div style={{
@@ -2359,13 +2452,19 @@ const FabricIssued = () => {
                 
                 const activeLots = classification?.lots || [];
                 const lotsCount = activeLots.length;
-                const isLocked = lotsCount >= 2;
+                const approvedReq = getApprovedRequestForTable(t.name);
+                const isApproved = Boolean(approvedReq);
+                const isLocked = lotsCount >= 2 && !isApproved && loggedInUser?.role !== 'Admin';
 
                 let statusBadgeText = 'VACANT';
                 let statusBadgeColor = '#10b981';
                 let cardClass = 'table-card eligible';
 
-                if (lotsCount === 1) {
+                if (isApproved) {
+                  statusBadgeText = `UNLOCKED (${(approvedReq?.respondedBy || 'ADMIN').toUpperCase()})`;
+                  statusBadgeColor = '#059669';
+                  cardClass = 'table-card approved-unlocked';
+                } else if (lotsCount === 1) {
                   statusBadgeText = '1 LOT ACTIVE';
                   statusBadgeColor = '#d97706';
                   cardClass = 'table-card has-one';
@@ -2405,6 +2504,21 @@ const FabricIssued = () => {
                           <span style={{ color: '#64748b', fontWeight: '500', fontStyle: 'italic' }}>No pending cuts</span>
                         )}
                       </div>
+
+                      {isApproved && (
+                        <div style={{
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          color: '#15803d',
+                          backgroundColor: '#dcfce7',
+                          border: '1px solid #86efac',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          marginBottom: '8px'
+                        }}>
+                          🔓 Approved by {approvedReq?.respondedBy || 'Admin'}
+                        </div>
+                      )}
                     </div>
 
                     {/* Staff */}

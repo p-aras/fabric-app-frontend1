@@ -614,9 +614,16 @@ export const store = {
         body: JSON.stringify({ status, respondedBy })
       }).then(handleResponse);
       if (res && res.data) {
-        // Sync local list
+        const targetTable = res.data.tableNo ? res.data.tableNo.trim().toLowerCase() : '';
         const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
-        const updated = localList.map(item => String(item.id) === String(id) ? { ...item, status, respondedBy, respondedAt: new Date().toISOString() } : item);
+        const updated = localList.map(item => {
+          const isTarget = String(item.id) === String(id);
+          const isSameTable = targetTable && item.tableNo && item.tableNo.trim().toLowerCase() === targetTable;
+          if (isTarget || isSameTable) {
+            return { ...item, status, respondedBy, respondedAt: new Date().toISOString() };
+          }
+          return item;
+        });
         localStorage.setItem('twms_approval_requests', JSON.stringify(updated));
         return res;
       }
@@ -624,7 +631,16 @@ export const store = {
       console.warn('Backend offline, responding approval request locally:', e);
     }
     const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
-    const updated = localList.map(item => String(item.id) === String(id) ? { ...item, status, respondedBy, respondedAt: new Date().toISOString() } : item);
+    const targetItem = localList.find(item => String(item.id) === String(id));
+    const targetTable = targetItem?.tableNo ? targetItem.tableNo.trim().toLowerCase() : '';
+    const updated = localList.map(item => {
+      const isTarget = String(item.id) === String(id);
+      const isSameTable = targetTable && item.tableNo && item.tableNo.trim().toLowerCase() === targetTable;
+      if (isTarget || isSameTable) {
+        return { ...item, status, respondedBy, respondedAt: new Date().toISOString() };
+      }
+      return item;
+    });
     localStorage.setItem('twms_approval_requests', JSON.stringify(updated));
     return { success: true, data: updated.find(item => String(item.id) === String(id)) };
   },
