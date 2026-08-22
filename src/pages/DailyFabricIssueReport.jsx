@@ -767,10 +767,17 @@ export default function DailyFabricIssueReport() {
           </div>
 
           {/* Refresh Action */}
-          <div>
-            <button className="btn btn-secondary" onClick={fetchReport} title="Reload Data" style={{ height: 38, width: 38, padding: 0, display: 'flex', alignItems: 'center', justify: 'center', borderRadius: 10, border: '2px solid #2563eb', background: 'white' }}>
-              <RefreshCw size={14} className={loading ? 'spin' : ''} style={{ color: '#2563eb', strokeWidth: 2.5 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button className="btn btn-primary" onClick={fetchReport} disabled={loading} style={{ height: 38, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10, background: '#2563eb', color: '#ffffff', fontWeight: 700, border: 'none' }}>
+              <RefreshCw size={14} className={loading ? 'spin-animation' : ''} />
+              {loading ? "Syncing MySQL Database..." : "Refresh Data"}
             </button>
+            {loading && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#2563eb', background: 'rgba(37, 99, 235, 0.08)', padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(37, 99, 235, 0.2)' }}>
+                <RefreshCw size={12} className="spin-animation" />
+                Fetching Issuance Data ({startDate} to {endDate})...
+              </div>
+            )}
           </div>
 
         </div>

@@ -64,7 +64,7 @@ const FabricIssued = () => {
   const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [fabricRollData, setFabricRollData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchLot, setSearchLot] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
@@ -112,7 +112,14 @@ const FabricIssued = () => {
   
   // Eligibility verification states
   const [eligibilityChecked, setEligibilityChecked] = useState(false);
-  const [tableClassificationData, setTableClassificationData] = useState([]);
+  const [tableClassificationData, setTableClassificationData] = useState(() => {
+    try {
+      const cached = localStorage.getItem('twms_table_classification');
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [loadingEligibility, setLoadingEligibility] = useState(false);
   const [eligibilityError, setEligibilityError] = useState(null);
   const [openIssuedLotNo, setOpenIssuedLotNo] = useState('');
@@ -374,19 +381,22 @@ const FabricIssued = () => {
     }
   }, []);
 
-  const getApprovedRequestForTable = useCallback((tableName) => {
+  const getApprovedRequestForTable = useCallback((tableName, targetLotNumber = null) => {
     if (!tableName || !Array.isArray(approvalRequests)) return null;
     const norm = str => (str || '').replace(/\s+/g, '').toLowerCase();
     const cleanName = norm(tableName);
     return approvalRequests.find(r => 
       r.tableNo && 
       norm(r.tableNo) === cleanName && 
-      r.status === 'Approved'
+      r.status === 'Approved' &&
+      (!targetLotNumber || !r.lotNumber || norm(r.lotNumber) === norm(targetLotNumber))
     ) || null;
   }, [approvalRequests]);
 
   const fetchTableClassification = async () => {
-    setLoadingEligibility(true);
+    if (!tableClassificationData || tableClassificationData.length === 0) {
+      setLoadingEligibility(true);
+    }
     setEligibilityError(null);
     try {
       const res = await fetch(`${API_BASE_URL}/reports/table-wise-classification`);
@@ -394,6 +404,7 @@ const FabricIssued = () => {
       const resData = await res.json();
       if (resData.success && Array.isArray(resData.data)) {
         setTableClassificationData(resData.data);
+        localStorage.setItem('twms_table_classification', JSON.stringify(resData.data));
       }
     } catch (err) {
       console.error('Error loading table capacity classification:', err);
@@ -421,7 +432,7 @@ const FabricIssued = () => {
       t => t.tableNumber.trim().toLowerCase() === tableNo.trim().toLowerCase()
     );
     
-    const approvedReq = getApprovedRequestForTable(tableNo);
+    const approvedReq = getApprovedRequestForTable(tableNo, searchLot || openIssuedLotNo || null);
     const isApproved = Boolean(approvedReq);
 
     if (tableData && Array.isArray(tableData.lots) && tableData.lots.length >= 2 && !isApproved && loggedInUser?.role !== 'Admin') {
@@ -2014,6 +2025,19 @@ const FabricIssued = () => {
       setIssueHistory(updatedHistory);
       localStorage.setItem(`fabric_issue_${selectedJob['Lot Number']}`, JSON.stringify(updatedHistory));
 
+      // Consume special approval permission if one was active for this table/lot
+      if (specialApprovalData?.tableNo || defaultTable) {
+        store.consumeApprovalRequest({
+          tableNo: specialApprovalData?.tableNo || defaultTable,
+          lotNumber: selectedJob['Lot Number']
+        }).catch(err => console.error('Error consuming approval request:', err));
+      }
+
+      setSpecialApprovalData(null);
+      setPendingApprovalReqId(null);
+      fetchApprovalRequests();
+      fetchTableClassification();
+
       alert(`✅ Issued Successfully!\n\n📦 Total Rolls: ${totalQuantity}\n⚖️ Total Weight: ${totalWeight.toFixed(2)} kg\n🏷️ Barcodes: ${allBarcodeIds.length} scanned\n✓ Data saved to Google Sheets`);
 
       setIssueQuantity({});
@@ -2247,14 +2271,7 @@ const FabricIssued = () => {
 
   const currentSelectedShade = getCurrentSelectedShade();
 
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p>Loading Fabric Issuance System...</p>
-      </div>
-    );
-  }
+  // Non-blocking UI: do not block full page with blank screen when loading
 
   if (error) {
     return (
@@ -2285,7 +2302,6 @@ const FabricIssued = () => {
         padding: '30px 40px',
         boxSizing: 'border-box'
       }}>
-        {/* Style block for animations */}
         <style>{`
           .table-card {
             background: #ffffff;
@@ -2325,6 +2341,8 @@ const FabricIssued = () => {
             border-color: #059669;
             box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
           }
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         `}</style>
 
         {/* Top Header */}
@@ -2337,9 +2355,34 @@ const FabricIssued = () => {
           marginBottom: '24px'
         }}>
           <div>
-            <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', margin: 0, textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
-              Verify Issuance Eligibility
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', margin: 0, textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
+                Verify Issuance Eligibility
+              </h1>
+              {loadingEligibility && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#eff6ff',
+                  color: '#1d4ed8',
+                  border: '1px solid #bfdbfe',
+                  padding: '4px 10px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: '600'
+                }}>
+                  <span style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: '#2563eb',
+                    animation: 'pulse 1.2s infinite'
+                  }}></span>
+                  Syncing Table Queue...
+                </span>
+              )}
+            </div>
             <p style={{ fontSize: '13px', color: '#475569', margin: '4px 0 0 0', fontWeight: '500' }}>
               Select an active cutting table. Tables with 2 or more uncut lots are locked in the frontend to avoid overloading.
             </p>
@@ -2358,6 +2401,7 @@ const FabricIssued = () => {
                   fontSize: '13px',
                   fontWeight: '700',
                   outline: 'none',
+                  textTransform: 'uppercase',
                   width: '180px'
                 }}
               />
@@ -2420,7 +2464,7 @@ const FabricIssued = () => {
 
         {/* Main Content Area */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loadingEligibility ? (
+          {(loadingEligibility && tableClassificationData.length === 0) ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '65%', textAlign: 'center', padding: '30px' }}>
               <div style={{
                 width: '54px',

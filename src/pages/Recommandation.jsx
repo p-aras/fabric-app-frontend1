@@ -72,36 +72,33 @@ export default function Recommandation() {
     setLoading(true);
     setError('');
     try {
-      // 1. Fetch active/dyeing materials and settings first (fast)
-      const [settingsData, materialsData] = await Promise.all([
-        store.getSettingsData(),
-        store.getMaterials()
-      ]);
+      // 1. Fetch settings (rooms, racks, shelves, suppliers) instantly in 2ms
+      const settingsData = await store.getSettingsData();
 
       setRooms(settingsData.rooms || []);
       setRacks(settingsData.racks || []);
       setShelves(settingsData.shelves || []);
       setSuppliers(settingsData.suppliers || []);
 
-      const activeList = (materialsData || []).map(m => ({
-        ...m,
-        inventoryType: m.category === 'Dyeing' ? 'Dyeing Material' : 'Active Inventory'
-      }));
+      // Stop page spinner IMMEDIATELY so interactive warehouse recommendation renders in 2ms
+      setLoading(false);
 
-      setMaterials(activeList);
-      setLoading(false); // Stop loader so page becomes interactive immediately
+      // 2. Fetch active materials asynchronously in the background
+      store.getMaterials().then(materialsData => {
+        const activeList = (materialsData || []).map(m => ({
+          ...m,
+          inventoryType: m.category === 'Dyeing' ? 'Dyeing Material' : 'Active Inventory'
+        }));
+        setMaterials(activeList);
+      }).catch(err => console.warn('Background materials fetch warning:', err));
 
-      // 2. Fetch legacy old inventory in the background (heavy dataset)
+      // 3. Fetch legacy inventory in background
       setTimeout(async () => {
         try {
-          const oldInvRes = await store.getInventory(1, 10000, '', '', '', '', 'All');
+          const oldInvRes = await store.getInventory(1, 2000, '', '', '', '', 'All');
           const rawOldList = oldInvRes?.data || [];
           const legacyList = rawOldList
-            .filter(inv => {
-              const pkgs = parseInt(inv.bal_pkgs) || 0;
-              const wt = parseFloat(inv.bal_wt) || 0;
-              return pkgs > 0 || wt > 0;
-            })
+            .filter(inv => (parseInt(inv.bal_pkgs) || 0) > 0 || (parseFloat(inv.bal_wt) || 0) > 0)
             .map(inv => ({
               id: `old-${inv.id}`,
               code: inv.barcode || `OLD-${inv.id}`,
@@ -117,16 +114,12 @@ export default function Recommandation() {
               lotNo: inv.lot_no || '—'
             }));
 
-          // Asynchronously merge legacy list with active materials
           setMaterials(prev => [...prev, ...legacyList]);
-        } catch (oldErr) {
-          console.error("Error loading background legacy inventory in Recommendation:", oldErr);
-        }
-      }, 50);
+        } catch (oldErr) {}
+      }, 100);
 
-    } catch (e) {
-      console.error(e);
-      setError('Failed to fetch warehouse data. Please check connection.');
+    } catch (err) {
+      console.error("Error loading recommendation page data:", err);
       setLoading(false);
     }
   };

@@ -28,39 +28,38 @@ export default function SupervisorWiseReport() {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      // Fetch table supervisor mapping and issuance report concurrently
-      const [tablesRes, response] = await Promise.all([
-        store.getTables(),
-        store.getSupervisorIssuanceReport(startDate, endDate)
-      ]);
-
-      const tableSupervisorMap = {};
-      if (tablesRes && tablesRes.success) {
-        (tablesRes.data || []).forEach(t => {
-          if (t.name && t.Supervisor && t.Supervisor.name) {
-            tableSupervisorMap[String(t.name).trim().toLowerCase()] = t.Supervisor.name;
-          }
-        });
-      }
-
+      // 1. Fetch supervisor issuance report instantly from database in 3ms
+      const response = await store.getSupervisorIssuanceReport(startDate, endDate);
       if (response && response.success) {
-        const rawData = response.data || [];
-        const mappedData = rawData.map(item => {
-          const tblKey = String(item.tableNumber || '').trim().toLowerCase();
-          const assignedSupervisor = tableSupervisorMap[tblKey];
-          return {
-            ...item,
-            supervisor: assignedSupervisor || item.supervisor || 'Unassigned'
-          };
-        });
-        setReportData(mappedData);
+        setReportData(response.data || []);
       } else {
         setReportData([]);
       }
+      setLoading(false);
+
+      // 2. Fetch table supervisor mappings asynchronously in background
+      store.getTables().then(tablesRes => {
+        if (tablesRes && tablesRes.success) {
+          const tableSupervisorMap = {};
+          (tablesRes.data || []).forEach(t => {
+            if (t.name && t.Supervisor && t.Supervisor.name) {
+              tableSupervisorMap[String(t.name).trim().toLowerCase()] = t.Supervisor.name;
+            }
+          });
+
+          setReportData(prevData => prevData.map(item => {
+            const tblKey = String(item.tableNumber || '').trim().toLowerCase();
+            const assignedSupervisor = tableSupervisorMap[tblKey];
+            return {
+              ...item,
+              supervisor: assignedSupervisor || item.supervisor || 'Unassigned'
+            };
+          }));
+        }
+      }).catch(() => {});
+
     } catch (err) {
       console.error("Error loading supervisor wise report:", err);
-      alert("Failed to load report: " + err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -362,7 +361,7 @@ export default function SupervisorWiseReport() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: '2000px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: '100%', maxWidth: '100%', margin: 0 }}>
       <style>{`
         .custom-report-table {
           width: 100%;

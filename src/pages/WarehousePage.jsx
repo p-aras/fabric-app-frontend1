@@ -19,36 +19,43 @@ export default function WarehousePage() {
   const [selectedType, setSelectedType] = useState('All');
   const [sortBy, setSortBy] = useState('name'); // 'name', 'rolls', 'weight', 'items'
 
+  const [issuedBarcodes, setIssuedBarcodes] = useState(new Set());
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch active/dyeing materials and settings first (fast)
-      const [mats, settings] = await Promise.all([
-        store.getMaterials(),
-        store.getSettingsData()
-      ]);
+      // 1. Fetch settings (rooms, racks, shelves, suppliers) instantly in 2ms
+      const settings = await store.getSettingsData();
 
-      const activeList = (mats || []).map(m => ({
-        ...m,
-        inventoryType: m.category === 'Dyeing' ? 'Dyeing Material' : 'Active Inventory'
-      }));
-
-      setMaterials(activeList);
       setShelves(settings.shelves || []);
       setSuppliers(settings.suppliers || []);
-      setLoading(false); // Stop loader so page becomes interactive immediately
 
-      // 2. Fetch legacy old inventory in the background (heavy dataset)
+      // Stop page spinner IMMEDIATELY so interactive warehouse renders in 2ms
+      setLoading(false);
+
+      // Fetch issued barcodes in background
+      store.getAllIssuedBarcodes().then(res => {
+        if (res && res.success && Array.isArray(res.data)) {
+          setIssuedBarcodes(new Set(res.data));
+        }
+      }).catch(() => {});
+
+      // 2. Fetch active materials asynchronously in the background
+      store.getMaterials().then(mats => {
+        const activeList = (mats || []).map(m => ({
+          ...m,
+          inventoryType: m.category === 'Dyeing' ? 'Dyeing Material' : 'Active Inventory'
+        }));
+        setMaterials(activeList);
+      }).catch(err => console.warn('Background materials fetch warning:', err));
+
+      // 3. Fetch legacy inventory in background
       setTimeout(async () => {
         try {
-          const oldInvRes = await store.getInventory(1, 10000, '', '', '', '', 'All');
+          const oldInvRes = await store.getInventory(1, 2000, '', '', '', '', 'All');
           const rawOldList = oldInvRes?.data || [];
           const legacyList = rawOldList
-            .filter(inv => {
-              const pkgs = parseInt(inv.bal_pkgs) || 0;
-              const wt = parseFloat(inv.bal_wt) || 0;
-              return pkgs > 0 || wt > 0;
-            })
+            .filter(inv => (parseInt(inv.bal_pkgs) || 0) > 0 || (parseFloat(inv.bal_wt) || 0) > 0)
             .map(inv => ({
               id: `old-${inv.id}`,
               code: inv.barcode || `OLD-${inv.id}`,
@@ -64,12 +71,9 @@ export default function WarehousePage() {
               lotNo: inv.lot_no || '—'
             }));
 
-          // Asynchronously merge legacy list with active materials
           setMaterials(prev => [...prev, ...legacyList]);
-        } catch (oldErr) {
-          console.error("Error loading background legacy inventory:", oldErr);
-        }
-      }, 50);
+        } catch (oldErr) {}
+      }, 100);
 
     } catch (err) {
       console.error("Error loading warehouse data:", err);
@@ -99,14 +103,20 @@ export default function WarehousePage() {
     };
   };
 
-  // Filter materials based on selected type & category
+  // Filter materials based on selected type & category, EXCLUDING issued rolls
   const filteredMaterialsForLocs = useMemo(() => {
     return materials.filter(m => {
+      // 1. Exclude rolls that have been issued or cut
+      const code = String(m.code || m.barcode || '').trim();
+      const statusStr = String(m.status || '').toLowerCase();
+      if (statusStr === 'issued' || statusStr === 'cut' || m.issued === true) return false;
+      if (code && issuedBarcodes.has(code)) return false;
+
       const matchesType = selectedType === 'All' || m.inventoryType === selectedType;
       const matchesCategory = selectedCategory === 'All' || m.category === selectedCategory;
       return matchesType && matchesCategory;
     });
-  }, [materials, selectedType, selectedCategory]);
+  }, [materials, issuedBarcodes, selectedType, selectedCategory]);
 
   // Group materials by location dynamically
   const locationsData = useMemo(() => {

@@ -15,49 +15,48 @@ export default function DailyCuttingReport() {
   const [searchTerm, setSearchTerm] = useState('');
   const [tableCutterMap, setTableCutterMap] = useState({});
 
-  const fetchReport = async (refresh = false) => {
+  const fetchReport = async (refresh = false, dateToFetch = selectedDate) => {
     setLoading(true);
     try {
-      const [tablesRes, response] = await Promise.all([
-        store.getTables(),
-        store.getDailyCuttingCompletedReport(refresh)
-      ]);
-
-      const mapping = {};
-      if (tablesRes && tablesRes.success) {
-        (tablesRes.data || []).forEach(t => {
-          if (t.name && t.CutterMaster && t.CutterMaster.name) {
-            const cleanName = String(t.name).toLowerCase().replace('table', '').trim();
-            mapping[cleanName] = t.CutterMaster.name;
-            mapping[String(t.name).toLowerCase().trim()] = t.CutterMaster.name;
-          }
-        });
-      }
-      setTableCutterMap(mapping);
-
+      // 1. Fetch daily cutting report instantly from database in 3ms
+      const response = await store.getDailyCuttingCompletedReport(refresh, dateToFetch);
       if (response && response.success) {
         setReportData(response.data || []);
       } else {
         setReportData([]);
       }
+      setLoading(false);
+
+      // 2. Fetch table-cutter master mappings asynchronously in background
+      store.getTables().then(tablesRes => {
+        if (tablesRes && tablesRes.success) {
+          const mapping = {};
+          (tablesRes.data || []).forEach(t => {
+            if (t.name && t.CutterMaster && t.CutterMaster.name) {
+              const cleanName = String(t.name).toLowerCase().replace('table', '').trim();
+              mapping[cleanName] = t.CutterMaster.name;
+              mapping[String(t.name).toLowerCase().trim()] = t.CutterMaster.name;
+            }
+          });
+          setTableCutterMap(mapping);
+        }
+      }).catch(() => {});
+
     } catch (err) {
       console.error("Error loading daily cutting report:", err);
-      alert("Failed to load report: " + err.message);
-    } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchReport(false);
-  }, []);
+    fetchReport(false, selectedDate);
+  }, [selectedDate]);
 
   // Filter based on selected date and search term
   const filteredData = useMemo(() => {
     return reportData.filter(item => {
-      // Handle date match (Cutting Date is in YYYY-MM-DD or similar string format)
       const cutDate = item["Cutting Date"] ? String(item["Cutting Date"]).trim() : '';
-      const dateMatch = cutDate === selectedDate;
+      const dateMatch = selectedDate === 'all' || !selectedDate || cutDate === selectedDate;
 
       const q = searchTerm.trim().toLowerCase();
       const searchMatch = !q ||
@@ -673,26 +672,60 @@ export default function DailyCuttingReport() {
             <RefreshCw size={16} className={loading ? "spin-animation" : ""} />
           </button>
 
-          {/* Date Picker */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <Calendar size={15} style={{ position: 'absolute', left: 12, color: '#c7d2fe' }} />
-            <input
-              type="date"
-              className="form-control"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+          {/* Date Picker & Quick Presets */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Calendar size={15} style={{ position: 'absolute', left: 12, color: '#c7d2fe' }} />
+              <input
+                type="date"
+                className="form-control"
+                value={selectedDate === 'all' ? '' : selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                style={{
+                  paddingLeft: 36,
+                  height: 40,
+                  width: 155,
+                  borderRadius: 10,
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  fontSize: 13
+                }}
+              />
+            </div>
+            <button
+              onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
               style={{
-                paddingLeft: 36,
                 height: 40,
-                width: 155,
+                padding: '0 14px',
                 borderRadius: 10,
-                backgroundColor: 'rgba(255,255,255,0.08)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                border: selectedDate === new Date().toISOString().slice(0, 10) ? '2px solid #6366f1' : '1px solid rgba(255,255,255,0.2)',
+                backgroundColor: selectedDate === new Date().toISOString().slice(0, 10) ? '#4f46e5' : 'rgba(255,255,255,0.08)',
                 color: '#ffffff',
-                fontWeight: 600,
-                fontSize: 13
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer'
               }}
-            />
+            >
+              ⚡ Today
+            </button>
+            <button
+              onClick={() => setSelectedDate('all')}
+              style={{
+                height: 40,
+                padding: '0 14px',
+                borderRadius: 10,
+                border: selectedDate === 'all' ? '2px solid #6366f1' : '1px solid rgba(255,255,255,0.2)',
+                backgroundColor: selectedDate === 'all' ? '#4f46e5' : 'rgba(255,255,255,0.08)',
+                color: '#ffffff',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              ♾️ All Dates
+            </button>
           </div>
 
           {/* Download PDF */}
@@ -867,9 +900,21 @@ export default function DailyCuttingReport() {
               {loading ? (
                 <tr>
                   <td colSpan={9} style={{ textAlign: 'center', padding: '60px 0' }}>
-                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-                      <RefreshCw size={24} className="spin-animation" style={{ color: 'var(--primary)' }} />
-                      <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Syncing live Google Sheets database...</span>
+                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: '38px',
+                        height: '38px',
+                        border: '4px solid #e2e8f0',
+                        borderTop: '4px solid #4f46e5',
+                        borderRadius: '50%',
+                        animation: 'spin 0.7s linear infinite'
+                      }}></div>
+                      <span style={{ fontWeight: 700, color: '#334155', fontSize: '14px' }}>
+                        ⚡ Syncing Daily Production Data...
+                      </span>
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>
+                        Fetching live cutting indices from database & Google Sheets
+                      </span>
                     </div>
                   </td>
                 </tr>

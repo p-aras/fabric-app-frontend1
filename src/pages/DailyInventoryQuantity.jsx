@@ -669,7 +669,7 @@ export default function DailyInventoryQuantity() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: '2000px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: '100%', maxWidth: '100%', margin: 0 }}>
       <style>{`
         .custom-report-table {
           width: 100%;

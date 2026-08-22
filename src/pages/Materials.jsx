@@ -639,10 +639,38 @@ export function BarcodeModal({ material, onClose }) {
   );
 }
 
+const formatDateToYYYYMMDD = (d) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getPresetDates = (preset) => {
+  const today = new Date();
+  const endStr = formatDateToYYYYMMDD(today);
+  if (preset === '7days') {
+    const past = new Date();
+    past.setDate(today.getDate() - 7);
+    return { start: formatDateToYYYYMMDD(past), end: endStr };
+  }
+  if (preset === '30days') {
+    const past = new Date();
+    past.setDate(today.getDate() - 30);
+    return { start: formatDateToYYYYMMDD(past), end: endStr };
+  }
+  if (preset === 'thisMonth') {
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { start: formatDateToYYYYMMDD(firstDay), end: endStr };
+  }
+  return { start: '', end: '' };
+};
+
 export default function Materials() {
   const [materials, setMaterials] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -669,10 +697,21 @@ export default function Materials() {
   const [selectedLocations, setSelectedLocations] = useState([]);
   const [selectedNames, setSelectedNames] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  
+  // Date Presets & Filters (Default to Weekly / Last 7 Days for fast loading)
+  const [activeDatePreset, setActiveDatePreset] = useState('7days');
+  const initialDates = useMemo(() => getPresetDates('7days'), []);
+  const [startDate, setStartDate] = useState(initialDates.start);
+  const [endDate, setEndDate] = useState(initialDates.end);
   const [barcodeSeries, setBarcodeSeries] = useState('All'); // 'All', '9', 'MAT', 'DYE', 'Plain'
   const [skipReAdd, setSkipReAdd] = useState(false);
+
+  const applyDatePreset = (presetKey) => {
+    setActiveDatePreset(presetKey);
+    const { start, end } = getPresetDates(presetKey);
+    setStartDate(start);
+    setEndDate(end);
+  };
 
   const [showForm, setShowForm] = useState(false);
   const [editMat, setEditMat] = useState(null);
@@ -686,6 +725,7 @@ export default function Materials() {
   }, []);
 
   const load = () => {
+    setLoading(true);
     store.getMaterials({
       page: currentPage,
       limit: itemsPerPage,
@@ -716,7 +756,8 @@ export default function Materials() {
         setTotalCount(rawList.length);
         setTotalPages(1);
       }
-    }).catch(console.error);
+    }).catch(console.error)
+      .finally(() => setLoading(false));
   };
 
   // Re-fetch data when page, page limit, or filters change
@@ -1077,6 +1118,47 @@ export default function Materials() {
       {/* Advanced Filters */}
       <div className="card" style={{ overflow: 'visible' }}>
         <div className="card-body" style={{ padding: '16px', overflow: 'visible' }}>
+          {/* Quick Date Range Presets */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 4 }}>
+              📅 Date Preset:
+            </span>
+            {[
+              { key: '7days', label: '⚡ Weekly (Last 7 Days)' },
+              { key: '30days', label: '🗓️ Last 30 Days' },
+              { key: 'thisMonth', label: '📆 This Month' },
+              { key: 'all', label: '♾️ All Time' }
+            ].map(preset => {
+              const isActive = activeDatePreset === preset.key;
+              return (
+                <button
+                  key={preset.key}
+                  type="button"
+                  onClick={() => applyDatePreset(preset.key)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    border: '1px solid ' + (isActive ? 'var(--primary)' : 'var(--border)'),
+                    background: isActive ? 'var(--primary)' : 'var(--surface)',
+                    color: isActive ? '#ffffff' : 'var(--text-primary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isActive ? '0 2px 4px rgba(26,86,219,0.2)' : 'none'
+                  }}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+            {activeDatePreset === '7days' && (
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--primary)', backgroundColor: 'rgba(26,86,219,0.1)', padding: '3px 8px', borderRadius: '4px', marginLeft: 'auto' }}>
+                ⚡ Fast Weekly View Active
+              </span>
+            )}
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, overflow: 'visible' }}>
             <div className="search-bar" style={{ gridColumn: 'span 2', minWidth: '280px' }}>
               <Search size={14} className="icon" />
@@ -1148,11 +1230,11 @@ export default function Materials() {
             />
 
             <div className="form-group" style={{ minWidth: '150px' }}>
-              <input type="date" className="form-control" value={startDate} onChange={e => setStartDate(e.target.value)} placeholder="Start Date" title="Start Date" />
+              <input type="date" className="form-control" value={startDate} onChange={e => { setStartDate(e.target.value); setActiveDatePreset('custom'); }} placeholder="Start Date" title="Start Date" />
             </div>
 
             <div className="form-group" style={{ minWidth: '150px' }}>
-              <input type="date" className="form-control" value={endDate} onChange={e => setEndDate(e.target.value)} placeholder="End Date" title="End Date" />
+              <input type="date" className="form-control" value={endDate} onChange={e => { setEndDate(e.target.value); setActiveDatePreset('custom'); }} placeholder="End Date" title="End Date" />
             </div>
           </div>
 
@@ -1170,8 +1252,8 @@ export default function Materials() {
                 setSelectedLocations([]);
                 setSelectedNames([]);
                 setSelectedTypes([]);
-                setStartDate('');
-                setEndDate('');
+                setBarcodeSeries('All');
+                applyDatePreset('7days');
               }}
             >
               Reset Filters
@@ -1299,7 +1381,14 @@ export default function Materials() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {loading ? (
+                <tr><td colSpan={11}>
+                  <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'inline-block', width: '28px', height: '28px', border: '3px solid rgba(26,86,219,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '10px' }}></div>
+                    <div style={{ fontSize: '13px', fontWeight: 600 }}>Loading materials data...</div>
+                  </div>
+                </td></tr>
+              ) : filtered.length === 0 ? (
                 <tr><td colSpan={11}>
                   <div className="empty-state">
                     <div className="empty-state-icon"><Package size={28} /></div>
@@ -1432,6 +1521,11 @@ export default function Materials() {
 
       {/* Custom Premium Styles for Table and Animations */}
       <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
         .old-inventory-card {
           border-radius: 12px;
           border: 1px solid var(--border);

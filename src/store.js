@@ -128,6 +128,12 @@ export const store = {
     }).then(handleResponse);
   },
 
+  getAllIssuedBarcodes: async () => {
+    return fetch(`${BASE_URL}/all-issued-barcodes`, {
+      headers: getHeaders(),
+    }).then(handleResponse);
+  },
+
   addMaterial: async (materialData) => {
     return fetch(`${BASE_URL}/materials`, {
       method: 'POST',
@@ -412,8 +418,8 @@ export const store = {
     }).then(handleResponse);
   },
 
-  getDailyCuttingCompletedReport: async (refresh = false) => {
-    return fetch(`${BASE_URL}/reports/daily-cutting-completed?refresh=${refresh}`, {
+  getDailyCuttingCompletedReport: async (refresh = false, date = '') => {
+    return fetch(`${BASE_URL}/reports/daily-cutting-completed?refresh=${refresh}&date=${encodeURIComponent(date)}`, {
       method: 'GET',
       headers: getHeaders(),
     }).then(handleResponse);
@@ -657,5 +663,47 @@ export const store = {
     }
     const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
     return localList.find(item => String(item.id) === String(id)) || null;
+  },
+
+  consumeApprovalRequest: async (idOrData) => {
+    try {
+      let url = `${BASE_URL}/approval-requests/consume`;
+      let body = {};
+      if (typeof idOrData === 'number' || typeof idOrData === 'string') {
+        url = `${BASE_URL}/approval-requests/${idOrData}/consume`;
+      } else if (idOrData && typeof idOrData === 'object') {
+        body = idOrData;
+      }
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(body)
+      }).then(handleResponse);
+
+      const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+      const updated = localList.map(item => {
+        const matchId = (typeof idOrData !== 'object') && String(item.id) === String(idOrData);
+        const matchTable = idOrData?.tableNo && item.tableNo && item.tableNo.trim().toLowerCase() === idOrData.tableNo.trim().toLowerCase();
+        if ((matchId || matchTable) && item.status === 'Approved') {
+          return { ...item, status: 'Used' };
+        }
+        return item;
+      });
+      localStorage.setItem('twms_approval_requests', JSON.stringify(updated));
+      return res;
+    } catch (e) {
+      console.warn('Backend offline, consuming approval request locally:', e);
+      const localList = JSON.parse(localStorage.getItem('twms_approval_requests') || '[]');
+      const updated = localList.map(item => {
+        const matchId = (typeof idOrData !== 'object') && String(item.id) === String(idOrData);
+        const matchTable = idOrData?.tableNo && item.tableNo && item.tableNo.trim().toLowerCase() === idOrData.tableNo.trim().toLowerCase();
+        if ((matchId || matchTable) && item.status === 'Approved') {
+          return { ...item, status: 'Used' };
+        }
+        return item;
+      });
+      localStorage.setItem('twms_approval_requests', JSON.stringify(updated));
+      return { success: true };
+    }
   }
 };
