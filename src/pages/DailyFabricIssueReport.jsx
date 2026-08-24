@@ -45,10 +45,31 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+const normalizeDateToYMD = (val) => {
+  if (!val || val === 'all' || val === '—') return '';
+  const s = String(val).replace(/[\u00a0\r\n\t]+/g, ' ').trim();
+  if (!s || s === 'null' || s === 'undefined') return '';
+
+  const ymd = s.match(/\b(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\b/);
+  if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+
+  const dmy = s.match(/\b(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})\b/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    const yr = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${yr}-${mo}-${da}`;
+  }
+  return '';
+};
+
 export default function DailyFabricIssueReport() {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 7); // Default to last 7 days
+    d.setDate(d.getDate() - 30); // Default to last 30 days
     return d.toISOString().slice(0, 10);
   });
   const [endDate, setEndDate] = useState(() => {
@@ -61,7 +82,7 @@ export default function DailyFabricIssueReport() {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const response = await store.getDailyFabricIssuanceReport(startDate, endDate);
+      const response = await store.getDailyFabricIssuanceReport('', '');
       if (response && response.success) {
         setReportData(response.data || []);
       } else {
@@ -69,7 +90,6 @@ export default function DailyFabricIssueReport() {
       }
     } catch (err) {
       console.error("Error loading daily fabric issue report:", err);
-      alert("Failed to load report: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -77,23 +97,64 @@ export default function DailyFabricIssueReport() {
 
   useEffect(() => {
     fetchReport();
-  }, [startDate, endDate]);
+  }, []);
 
-  // General Text Filtering
+  // Quick preset helper
+  const setDatePreset = (preset) => {
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    if (preset === 'today') {
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (preset === 'yesterday') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yStr = y.toISOString().slice(0, 10);
+      setStartDate(yStr);
+      setEndDate(yStr);
+    } else if (preset === '7days') {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      setStartDate(d.toISOString().slice(0, 10));
+      setEndDate(todayStr);
+    } else if (preset === '30days') {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      setStartDate(d.toISOString().slice(0, 10));
+      setEndDate(todayStr);
+    } else if (preset === 'all') {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
+  // General Date & Text Filtering
   const filteredData = useMemo(() => {
+    const startYMD = normalizeDateToYMD(startDate);
+    const endYMD = normalizeDateToYMD(endDate);
+
     return reportData.filter(item => {
+      // 1. Date Range Filtering
+      const rawDate = item.date || item.issuedAt || item.createdAt || '';
+      const itemYMD = normalizeDateToYMD(rawDate);
+
+      if (startYMD && itemYMD && itemYMD < startYMD) return false;
+      if (endYMD && itemYMD && itemYMD > endYMD) return false;
+
+      // 2. Text Search Filtering
       const q = searchTerm.toLowerCase().trim();
       if (!q) return true;
       return (
-        String(item.tableNumber).toLowerCase().includes(q) ||
-        String(item.fabric).toLowerCase().includes(q) ||
-        String(item.lotNumber).toLowerCase().includes(q) ||
-        String(item.jobOrderNo).toLowerCase().includes(q) ||
-        String(item.shade).toLowerCase().includes(q) ||
-        String(item.issuedBy).toLowerCase().includes(q)
+        String(item.tableNumber || '').toLowerCase().includes(q) ||
+        String(item.fabric || '').toLowerCase().includes(q) ||
+        String(item.lotNumber || '').toLowerCase().includes(q) ||
+        String(item.jobOrderNo || '').toLowerCase().includes(q) ||
+        String(item.shade || '').toLowerCase().includes(q) ||
+        String(item.issuedBy || '').toLowerCase().includes(q)
       );
     });
-  }, [reportData, searchTerm]);
+  }, [reportData, startDate, endDate, searchTerm]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -766,18 +827,80 @@ export default function DailyFabricIssueReport() {
             </div>
           </div>
 
-          {/* Refresh Action */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button className="btn btn-primary" onClick={fetchReport} disabled={loading} style={{ height: 38, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10, background: '#2563eb', color: '#ffffff', fontWeight: 700, border: 'none' }}>
-              <RefreshCw size={14} className={loading ? 'spin-animation' : ''} />
-              {loading ? "Syncing MySQL Database..." : "Refresh Data"}
+          {/* Refresh & Quick Presets */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              className="btn"
+              onClick={() => setDatePreset('today')}
+              style={{
+                height: 38,
+                padding: '0 12px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                backgroundColor: startDate === new Date().toISOString().slice(0, 10) && endDate === new Date().toISOString().slice(0, 10) ? '#2563eb' : '#f1f5f9',
+                color: startDate === new Date().toISOString().slice(0, 10) && endDate === new Date().toISOString().slice(0, 10) ? '#ffffff' : '#334155',
+                border: '1px solid #cbd5e1',
+                cursor: 'pointer'
+              }}
+            >
+              ⚡ Today
             </button>
-            {loading && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#2563eb', background: 'rgba(37, 99, 235, 0.08)', padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(37, 99, 235, 0.2)' }}>
-                <RefreshCw size={12} className="spin-animation" />
-                Fetching Issuance Data ({startDate} to {endDate})...
-              </div>
-            )}
+            <button
+              className="btn"
+              onClick={() => setDatePreset('7days')}
+              style={{
+                height: 38,
+                padding: '0 12px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                backgroundColor: '#f1f5f9',
+                color: '#334155',
+                border: '1px solid #cbd5e1',
+                cursor: 'pointer'
+              }}
+            >
+              7 Days
+            </button>
+            <button
+              className="btn"
+              onClick={() => setDatePreset('30days')}
+              style={{
+                height: 38,
+                padding: '0 12px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                backgroundColor: '#f1f5f9',
+                color: '#334155',
+                border: '1px solid #cbd5e1',
+                cursor: 'pointer'
+              }}
+            >
+              30 Days
+            </button>
+            <button
+              className="btn"
+              onClick={() => setDatePreset('all')}
+              style={{
+                height: 38,
+                padding: '0 12px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                backgroundColor: !startDate && !endDate ? '#2563eb' : '#f1f5f9',
+                color: !startDate && !endDate ? '#ffffff' : '#334155',
+                border: '1px solid #cbd5e1',
+                cursor: 'pointer'
+              }}
+            >
+              ♾️ All Time
+            </button>
+            <button className="btn btn-primary" onClick={fetchReport} disabled={loading} style={{ height: 38, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, background: '#2563eb', color: '#ffffff', fontWeight: 700, border: 'none' }}>
+              <RefreshCw size={14} className={loading ? 'spin-animation' : ''} />
+              {loading ? "Syncing..." : "Refresh"}
+            </button>
           </div>
 
         </div>

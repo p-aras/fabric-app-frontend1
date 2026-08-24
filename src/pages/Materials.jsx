@@ -698,11 +698,10 @@ export default function Materials() {
   const [selectedNames, setSelectedNames] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
   
-  // Date Presets & Filters (Default to Weekly / Last 7 Days for fast loading)
-  const [activeDatePreset, setActiveDatePreset] = useState('7days');
-  const initialDates = useMemo(() => getPresetDates('7days'), []);
-  const [startDate, setStartDate] = useState(initialDates.start);
-  const [endDate, setEndDate] = useState(initialDates.end);
+  // Date Presets & Filters (Default to 'all' / All Time to display all records)
+  const [activeDatePreset, setActiveDatePreset] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [barcodeSeries, setBarcodeSeries] = useState('All'); // 'All', '9', 'MAT', 'DYE', 'Plain'
   const [skipReAdd, setSkipReAdd] = useState(false);
 

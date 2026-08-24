@@ -82,21 +82,23 @@ export default function DailyInventoryQuantity() {
   // Calculate statistics
   const stats = filteredData.reduce((acc, curr) => {
     const isMtr = String(curr.unit || '').toUpperCase() === 'MTR';
+    const numWeight = parseFloat(curr.weight) || 0;
+    const numRolls = parseInt(curr.rolls, 10) || (curr.weight ? 1 : 0);
     if (!isMtr) {
-      acc.totalWeight += curr.weight || 0;
+      acc.totalWeight += numWeight;
       if (curr.type === 'Material') {
-        acc.materialWeight += curr.weight || 0;
+        acc.materialWeight += numWeight;
       } else {
-        acc.dyeingWeight += curr.weight || 0;
+        acc.dyeingWeight += numWeight;
       }
     } else {
-      acc.totalMeters += curr.weight || 0;
+      acc.totalMeters += numWeight;
     }
-    acc.totalRolls += curr.rolls || 0;
+    acc.totalRolls += numRolls;
     if (curr.type === 'Material') {
-      acc.materialRolls += curr.rolls || 0;
+      acc.materialRolls += numRolls;
     } else {
-      acc.dyeingRolls += curr.rolls || 0;
+      acc.dyeingRolls += numRolls;
     }
     return acc;
   }, { totalWeight: 0, totalRolls: 0, materialRolls: 0, dyeingRolls: 0, totalMeters: 0, materialWeight: 0, dyeingWeight: 0 });
@@ -444,8 +446,8 @@ export default function DailyInventoryQuantity() {
           totalWeight: 0
         };
       }
-      grouped[key].totalRolls += item.rolls || 1;
-      grouped[key].totalWeight += item.weight || 0;
+      grouped[key].totalRolls += parseInt(item.rolls, 10) || (item.weight ? 1 : 0);
+      grouped[key].totalWeight += parseFloat(item.weight) || 0;
     });
 
     const groupedList = Object.values(grouped);
@@ -516,10 +518,14 @@ export default function DailyInventoryQuantity() {
     doc.text("TOTAL METERS", M + colWidth + 15, y + 16);
     doc.text("TOTAL ROLLS / PKGS", M + 2 * colWidth + 15, y + 16);
 
+    const safeWeight = (parseFloat(stats.totalWeight) || 0).toFixed(2);
+    const safeMeters = (parseFloat(stats.totalMeters) || 0).toFixed(2);
+    const safeRolls = parseInt(stats.totalRolls, 10) || 0;
+
     setFont("bold", 11);
-    doc.text(`${stats.totalWeight.toFixed(2)} KG`, M + 15, y + 34);
-    doc.text(`${stats.totalMeters.toFixed(2)} MTR`, M + colWidth + 15, y + 34);
-    doc.text(`${stats.totalRolls}`, M + 2 * colWidth + 15, y + 34);
+    doc.text(`${safeWeight} KG`, M + 15, y + 34);
+    doc.text(`${safeMeters} MTR`, M + colWidth + 15, y + 34);
+    doc.text(`${safeRolls}`, M + 2 * colWidth + 15, y + 34);
 
     y += 65;
 

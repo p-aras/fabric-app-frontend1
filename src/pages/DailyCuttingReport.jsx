@@ -1,10 +1,132 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { store } from '../store.js';
 import {
-  Calendar, Search, Download, RefreshCw, Layers, Scissors, CheckCircle, Table as TableIcon
+  Calendar, Search, Download, RefreshCw, Layers, Scissors, CheckCircle, Table as TableIcon, ChevronDown, X
 } from 'lucide-react';
 import * as XLSX from "xlsx-js-style";
 import { jsPDF } from 'jspdf';
+
+const monthMap = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+};
+
+const normalizeDateToYMD = (val) => {
+  if (!val || val === 'all' || val === '—') return '';
+  const s = String(val).replace(/[\u00a0\r\n\t]+/g, ' ').trim();
+  if (!s || s === 'null' || s === 'undefined') return '';
+
+  // 1. Exact ISO or YYYY-MM-DD
+  const ymd = s.match(/\b(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\b/);
+  if (ymd) {
+    return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+  }
+
+  // 2. Exact DD-MM-YYYY or DD/MM/YYYY
+  const dmy = s.match(/\b(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})\b/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+
+  // 3. String containing year and English month (e.g. "Sat Aug 22 2026 ...", "22 Aug 2026", "Aug 22 2026")
+  const yrMatch = s.match(/\b(20\d{2})\b/);
+  const monMatch = s.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
+
+  if (yrMatch && monMatch) {
+    const yr = yrMatch[1];
+    const mNum = monthMap[monMatch[1].toLowerCase()];
+    let day = '01';
+    const allNums = s.match(/\b(\d{1,2})\b/g) || [];
+    for (const num of allNums) {
+      const n = parseInt(num, 10);
+      if (n >= 1 && n <= 31 && num.length <= 2) {
+        day = num.padStart(2, '0');
+        break;
+      }
+    }
+    return `${yr}-${mNum}-${day}`;
+  }
+
+  // 4. Native Date parse
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    const yr = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${yr}-${mo}-${da}`;
+  }
+
+  return '';
+};
+
+const BUDGET_SHEET_ID = "1Hj3JeJEKB43aYYWv8gk2UhdU6BWuEQfCg5pBlTdBMNA";
+const API_KEY = "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk";
+
+const fetchLiveIndexSheetFromGoogle = async () => {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${BUDGET_SHEET_ID}/values/Index!A:AZ?key=${API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Google Sheets fetch error: ${res.statusText}`);
+  const json = await res.json();
+  const values = json.values || [];
+  if (values.length === 0) return [];
+
+  const rawHeaders = values[0] || [];
+  const hmap = {};
+  rawHeaders.forEach((h, i) => {
+    const clean = String(h || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (clean) hmap[clean] = i;
+  });
+
+  const getCol = (row, ...aliases) => {
+    for (const a of aliases) {
+      const key = a.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (hmap[key] != null && hmap[key] < row.length) {
+        const val = String(row[hmap[key]] || '').trim();
+        if (val) return val;
+      }
+    }
+    return '';
+  };
+
+  const records = [];
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (!row || row.length === 0) continue;
+
+    const lot = getCol(row, 'lot number', 'lot no', 'lot') || String(row[0] || '').trim();
+    if (!lot || isNaN(Number(lot))) continue;
+
+    const fabric = getCol(row, 'fabric', 'fabric description', 'fabric name') || String(row[4] || '—').trim();
+    const garmentType = getCol(row, 'garment type', 'garment') || String(row[5] || '—').trim();
+    const style = getCol(row, 'style') || String(row[6] || '—').trim();
+    const supervisor = getCol(row, 'supervisor', 'fabric supervisor') || String(row[11] || 'System').trim();
+    const partyName = getCol(row, 'party name', 'party') || String(row[13] || '—').trim();
+    const brand = getCol(row, 'brand') || String(row[14] || '—').trim();
+    const savedAt = getCol(row, 'saved at', 'savedat', 'saved date', 'cutting date', 'date') || String(row[23] || '').trim();
+    const qtyStr = getCol(row, 'cutting qty', 'cuttingqty', 'qty', 'total qty', 'pcs') || String(row[25] || '0').trim();
+    const cuttingQty = parseFloat(qtyStr.replace(/,/g, '')) || 0;
+    const cuttingTable = getCol(row, 'cutting table', 'table') || 'Table 1';
+
+    // Only include rows where Saved at is populated (completed cuts)
+    if (savedAt) {
+      records.push({
+        "Lot No": lot,
+        "Fabric": fabric || '—',
+        "Style": style || '—',
+        "Brand": brand || '—',
+        "Garment Type": garmentType || '—',
+        "Party Name": partyName || '—',
+        "Cutting Table": cuttingTable,
+        "Saved At": savedAt,
+        "Supervisor": supervisor || 'System',
+        "Total Qty": cuttingQty
+      });
+    }
+  }
+
+  // Reverse so newest lots appear on top
+  return records.reverse();
+};
 
 export default function DailyCuttingReport() {
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -14,20 +136,53 @@ export default function DailyCuttingReport() {
   const [reportData, setReportData] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [tableCutterMap, setTableCutterMap] = useState({});
+  const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
+  const [dateSearchQuery, setDateSearchQuery] = useState('');
+  const dropdownRef = useRef(null);
 
-  const fetchReport = async (refresh = false, dateToFetch = selectedDate) => {
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDateDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const fetchReport = async (refresh = false) => {
     setLoading(true);
     try {
-      // 1. Fetch daily cutting report instantly from database in 3ms
-      const response = await store.getDailyCuttingCompletedReport(refresh, dateToFetch);
-      if (response && response.success) {
-        setReportData(response.data || []);
-      } else {
-        setReportData([]);
+      // 1. Fetch live Google Sheets Index tab directly for 100% real-time accuracy
+      let rawList = [];
+      try {
+        rawList = await fetchLiveIndexSheetFromGoogle();
+      } catch (sheetErr) {
+        console.warn("Direct Google Sheet fetch failed, falling back to database API:", sheetErr);
+        const response = await store.getDailyCuttingCompletedReport(refresh, 'all');
+        if (response && response.success) {
+          rawList = response.data || [];
+        }
+      }
+
+      setReportData(rawList);
+
+      // Auto-select latest available cut date if today has 0 entries
+      const datesCount = {};
+      rawList.forEach(r => {
+        const raw = r["Saved At"] || r["savedAt"] || r["Saved at"] || r["Cutting Date"] || '';
+        const ymd = normalizeDateToYMD(raw);
+        if (ymd) datesCount[ymd] = (datesCount[ymd] || 0) + 1;
+      });
+
+      const sortedDates = Object.keys(datesCount).sort((a, b) => b.localeCompare(a));
+      const todayYMD = new Date().toISOString().slice(0, 10);
+      if (!datesCount[todayYMD] && sortedDates.length > 0) {
+        setSelectedDate(sortedDates[0]);
       }
       setLoading(false);
 
-      // 2. Fetch table-cutter master mappings asynchronously in background
       store.getTables().then(tablesRes => {
         if (tablesRes && tablesRes.success) {
           const mapping = {};
@@ -49,14 +204,42 @@ export default function DailyCuttingReport() {
   };
 
   useEffect(() => {
-    fetchReport(false, selectedDate);
-  }, [selectedDate]);
+    fetchReport(false);
+  }, []);
+
+  // Compute available dates with lot counts
+  const availableDates = useMemo(() => {
+    const counts = {};
+    (reportData || []).forEach(item => {
+      const raw = item["Saved At"] || item["savedAt"] || item["Saved at"] || item["Cutting Date"] || '';
+      const ymd = normalizeDateToYMD(raw);
+      if (ymd) {
+        counts[ymd] = (counts[ymd] || 0) + 1;
+      }
+    });
+    return Object.entries(counts).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [reportData]);
+
+  // Filter available dates based on search query inside dropdown
+  const filteredAvailableDates = useMemo(() => {
+    if (!dateSearchQuery.trim()) return availableDates;
+    const q = dateSearchQuery.trim().toLowerCase();
+    return availableDates.filter(([d]) => {
+      return d.toLowerCase().includes(q);
+    });
+  }, [availableDates, dateSearchQuery]);
+
+  const targetDateYMD = normalizeDateToYMD(selectedDate);
 
   // Filter based on selected date and search term
   const filteredData = useMemo(() => {
     return reportData.filter(item => {
-      const cutDate = item["Cutting Date"] ? String(item["Cutting Date"]).trim() : '';
-      const dateMatch = selectedDate === 'all' || !selectedDate || cutDate === selectedDate;
+      const rawSavedAt = item["Saved At"] || item["savedAt"] || item["Saved at"] || item["Cutting Date"] || '';
+      const itemYMD = normalizeDateToYMD(rawSavedAt);
+
+      if (selectedDate && selectedDate !== 'all' && targetDateYMD) {
+        if (!itemYMD || itemYMD !== targetDateYMD) return false;
+      }
 
       const q = searchTerm.trim().toLowerCase();
       const searchMatch = !q ||
@@ -68,9 +251,9 @@ export default function DailyCuttingReport() {
         String(item["Party Name"] || '').toLowerCase().includes(q) ||
         String(item["Cutting Table"] || '').toLowerCase().includes(q);
 
-      return dateMatch && searchMatch;
+      return searchMatch;
     });
-  }, [reportData, selectedDate, searchTerm]);
+  }, [reportData, selectedDate, targetDateYMD, searchTerm]);
 
   // Statistics calculation
   const stats = useMemo(() => {
@@ -195,7 +378,7 @@ export default function DailyCuttingReport() {
 
     const headers = [
       "SR", "Lot No", "Fabric", "Style", "Brand",
-      "Garment Type", "Party Name", "Cutting Table", "Total Qty"
+      "Garment Type", "Party Name", "Cutting Table", "Saved At", "Total Qty"
     ];
 
     const rows = filteredData.map((item, idx) => [
@@ -207,12 +390,13 @@ export default function DailyCuttingReport() {
       item["Garment Type"] || '—',
       item["Party Name"] || '—',
       item["Cutting Table"] || '—',
+      item["Saved At"] || item["Cutting Date"] || '—',
       parseFloat(item["Total Qty"]) || 0
     ]);
 
     // Append total row
     rows.push([
-      "Total", "", "", "", "", "", "", "",
+      "Total", "", "", "", "", "", "", "", "",
       filteredData.reduce((sum, item) => sum + (parseFloat(item["Total Qty"]) || 0), 0)
     ]);
 
@@ -672,60 +856,196 @@ export default function DailyCuttingReport() {
             <RefreshCw size={16} className={loading ? "spin-animation" : ""} />
           </button>
 
-          {/* Date Picker & Quick Presets */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <Calendar size={15} style={{ position: 'absolute', left: 12, color: '#c7d2fe' }} />
-              <input
-                type="date"
-                className="form-control"
-                value={selectedDate === 'all' ? '' : selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                style={{
-                  paddingLeft: 36,
-                  height: 40,
-                  width: 155,
-                  borderRadius: 10,
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                  fontSize: 13
-                }}
-              />
-            </div>
+          {/* Searchable Cut Date Dropdown */}
+          <div style={{ position: 'relative' }} ref={dropdownRef}>
             <button
-              onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+              onClick={() => setDateDropdownOpen(!dateDropdownOpen)}
               style={{
                 height: 40,
                 padding: '0 14px',
                 borderRadius: 10,
-                border: selectedDate === new Date().toISOString().slice(0, 10) ? '2px solid #6366f1' : '1px solid rgba(255,255,255,0.2)',
-                backgroundColor: selectedDate === new Date().toISOString().slice(0, 10) ? '#4f46e5' : 'rgba(255,255,255,0.08)',
+                background: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.25)',
                 color: '#ffffff',
-                fontSize: 12,
                 fontWeight: 700,
-                cursor: 'pointer'
+                fontSize: 13,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
               }}
             >
-              ⚡ Today
+              <Calendar size={15} style={{ color: '#818cf8' }} />
+              <span>
+                {selectedDate === 'all' 
+                  ? `♾️ All Dates (${reportData.length})` 
+                  : `📅 ${selectedDate} (${filteredData.length} Lots)`}
+              </span>
+              <ChevronDown size={14} style={{ transform: dateDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
             </button>
-            <button
-              onClick={() => setSelectedDate('all')}
+
+            {/* Dropdown Menu with Search */}
+            {dateDropdownOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '115%',
+                right: 0,
+                zIndex: 1000,
+                width: '320px',
+                backgroundColor: '#1e1b4b',
+                border: '1px solid rgba(129, 140, 248, 0.35)',
+                borderRadius: 12,
+                boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+                padding: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
+              }}>
+                {/* Search Input inside Dropdown */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Search size={14} style={{ position: 'absolute', left: 10, color: '#94a3b8' }} />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search cut date (e.g. 22-08, Aug)..."
+                    value={dateSearchQuery}
+                    onChange={(e) => setDateSearchQuery(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: 36,
+                      paddingLeft: 32,
+                      paddingRight: 28,
+                      backgroundColor: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: 8,
+                      color: '#ffffff',
+                      fontSize: 12,
+                      outline: 'none'
+                    }}
+                  />
+                  {dateSearchQuery && (
+                    <X 
+                      size={14} 
+                      onClick={() => setDateSearchQuery('')} 
+                      style={{ position: 'absolute', right: 8, color: '#94a3b8', cursor: 'pointer' }} 
+                    />
+                  )}
+                </div>
+
+                {/* Quick Presets */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => { setSelectedDate('all'); setDateDropdownOpen(false); }}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      backgroundColor: selectedDate === 'all' ? '#4f46e5' : 'rgba(255,255,255,0.08)',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ♾️ All Dates ({reportData.length})
+                  </button>
+                  <button
+                    onClick={() => { setSelectedDate(new Date().toISOString().slice(0, 10)); setDateDropdownOpen(false); }}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      backgroundColor: selectedDate === new Date().toISOString().slice(0, 10) ? '#4f46e5' : 'rgba(255,255,255,0.08)',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Today
+                  </button>
+                </div>
+
+                {/* Scrollable list of available dates */}
+                <div style={{
+                  maxHeight: '260px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4
+                }}>
+                  {filteredAvailableDates.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
+                      No cut dates matching "{dateSearchQuery}"
+                    </div>
+                  ) : (
+                    filteredAvailableDates.map(([d, count]) => {
+                      const isSelected = selectedDate === d || targetDateYMD === d;
+                      return (
+                        <div
+                          key={d}
+                          onClick={() => {
+                            setSelectedDate(d);
+                            setDateDropdownOpen(false);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.4)' : 'rgba(255,255,255,0.04)',
+                            border: isSelected ? '1px solid #818cf8' : '1px solid transparent',
+                            cursor: 'pointer',
+                            transition: 'background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; }}
+                          onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'; }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Calendar size={13} style={{ color: isSelected ? '#818cf8' : '#94a3b8' }} />
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>{d}</span>
+                          </div>
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            backgroundColor: isSelected ? '#4f46e5' : 'rgba(255,255,255,0.12)',
+                            padding: '2px 7px',
+                            borderRadius: 12,
+                            color: isSelected ? '#ffffff' : '#cbd5e1'
+                          }}>
+                            {count} {count === 1 ? 'lot' : 'lots'}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Calendar Picker for custom dates */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Calendar size={15} style={{ position: 'absolute', left: 12, color: '#c7d2fe' }} />
+            <input
+              type="date"
+              className="form-control"
+              value={selectedDate === 'all' ? '' : selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
               style={{
+                paddingLeft: 36,
                 height: 40,
-                padding: '0 14px',
+                width: 155,
                 borderRadius: 10,
-                border: selectedDate === 'all' ? '2px solid #6366f1' : '1px solid rgba(255,255,255,0.2)',
-                backgroundColor: selectedDate === 'all' ? '#4f46e5' : 'rgba(255,255,255,0.08)',
+                backgroundColor: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)',
                 color: '#ffffff',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer'
+                fontWeight: 600,
+                fontSize: 13
               }}
-            >
-              ♾️ All Dates
-            </button>
+            />
           </div>
 
           {/* Download PDF */}
@@ -893,13 +1213,14 @@ export default function DailyCuttingReport() {
                 <th>Garment Type</th>
                 <th>Party Name</th>
                 <th>Cutting Table</th>
+                <th>Saved At</th>
                 <th style={{ textAlign: 'right' }}>Total Quantity</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '60px 0' }}>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '60px 0' }}>
                     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                       <div style={{
                         width: '38px',
@@ -920,7 +1241,7 @@ export default function DailyCuttingReport() {
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <div className="empty-state" style={{ padding: '60px 20px', textAlign: 'center' }}>
                       <div style={{
                         display: 'inline-flex',
@@ -962,13 +1283,24 @@ export default function DailyCuttingReport() {
                           </span>
                         ) : '—'}
                       </td>
+                      <td style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }} title={item["Saved At"]}>
+                        {(() => {
+                          const raw = item["Saved At"] || item["Cutting Date"] || '—';
+                          if (!raw || raw === '—') return '—';
+                          const match = String(raw).match(/([a-zA-Z]+)\s+([a-zA-Z]+)\s+(\d{1,2})\s+(\d{4})\s+(\d{2}:\d{2}:\d{2})/);
+                          if (match) {
+                            return `${match[3]} ${match[2]} ${match[4]}, ${match[5]}`;
+                          }
+                          return String(raw).length > 25 ? String(raw).slice(0, 25) : raw;
+                        })()}
+                      </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
                         {parseFloat(item["Total Qty"] || 0).toLocaleString()}
                       </td>
                     </tr>
                   ))}
                   <tr style={{ backgroundColor: 'var(--bg-hover)', fontWeight: 800, borderTop: '2.5px double var(--border)', borderBottom: '2.5px double var(--border)' }}>
-                    <td colSpan={8} style={{ textAlign: 'right', padding: '10px 15px', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>
+                    <td colSpan={9} style={{ textAlign: 'right', padding: '10px 15px', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>
                       Total Quantity (PCS):
                     </td>
                     <td style={{ textAlign: 'right', color: 'var(--text-primary)', fontSize: 13, fontWeight: 800 }}>

@@ -393,10 +393,8 @@ const FabricIssued = () => {
     ) || null;
   }, [approvalRequests]);
 
-  const fetchTableClassification = async () => {
-    if (!tableClassificationData || tableClassificationData.length === 0) {
-      setLoadingEligibility(true);
-    }
+  const fetchTableClassification = async (forceRefresh = false) => {
+    setLoadingEligibility(true);
     setEligibilityError(null);
     try {
       const res = await fetch(`${API_BASE_URL}/reports/table-wise-classification`);
@@ -2817,10 +2815,16 @@ const FabricIssued = () => {
                   className="hero-input"
                 />
               </div>
-              <button onClick={handleSearch} className="hero-button">
-                Search
+              <button 
+                onClick={handleSearch} 
+                disabled={loading} 
+                className="hero-button"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', opacity: loading ? 0.8 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+              >
+                {loading && <span className="search-spinner" style={{ width: '14px', height: '14px', borderTopColor: '#5f3dc4' }} />}
+                {loading ? 'Searching...' : 'Search'}
               </button>
-              <button onClick={fetchSheetData} className="hero-button secondary">
+              <button onClick={fetchSheetData} disabled={loading} className="hero-button secondary">
                 🔄
               </button>
             </div>
@@ -3046,10 +3050,16 @@ const FabricIssued = () => {
                   className="top-search-input"
                 />
               </div>
-              <button onClick={handleSearch} className="top-search-btn">
-                Search Lot
+              <button 
+                onClick={handleSearch} 
+                disabled={loading} 
+                className="top-search-btn"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', opacity: loading ? 0.8 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+              >
+                {loading && <span className="search-spinner" style={{ width: '14px', height: '14px' }} />}
+                {loading ? 'Searching Lot...' : 'Search Lot'}
               </button>
-              <button onClick={fetchSheetData} className="top-refresh-btn">
+              <button onClick={fetchSheetData} disabled={loading} className="top-refresh-btn">
                 Refresh Data
               </button>
             </div>
@@ -4168,6 +4178,7 @@ const FabricIssued = () => {
               </div>
               <button
                 onClick={handleSearch}
+                disabled={loading}
                 style={{
                   background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
                   color: 'white',
@@ -4176,15 +4187,43 @@ const FabricIssued = () => {
                   borderRadius: '12px',
                   fontWeight: '700',
                   fontSize: '15px',
-                  cursor: 'pointer',
+                  cursor: loading ? 'not-allowed' : 'pointer',
                   boxShadow: '0 4px 6px rgba(30, 60, 114, 0.15)',
                   transition: 'all 0.2s',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  opacity: loading ? 0.8 : 1
                 }}
               >
-                Search Lot
+                {loading && <span className="search-spinner" style={{ width: '16px', height: '16px' }} />}
+                {loading ? 'Searching Lot...' : 'Search Lot'}
               </button>
             </div>
+            {loading && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                padding: '14px 24px',
+                background: '#eff6ff',
+                border: '1.5px solid #bfdbfe',
+                borderRadius: '12px',
+                color: '#1d4ed8',
+                fontSize: '14px',
+                fontWeight: '600',
+                marginTop: '10px',
+                width: '100%',
+                maxWidth: '480px',
+                boxSizing: 'border-box',
+                animation: 'fadeInModal 0.2s ease'
+              }}>
+                <span className="search-spinner" style={{ width: '18px', height: '18px', borderWidth: '2.5px', borderTopColor: '#2563eb' }} />
+                <span>Fetching Job Order & Shade details for Lot <strong>{searchLot}</strong>...</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -4489,13 +4528,17 @@ const FabricIssued = () => {
       )}
 
       <style>{`
-        @keyframes fadeInModal {
-          from { opacity: 0; }
-          to { opacity: 1; }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
         }
-        @keyframes slideUpModal {
-          from { opacity: 0; transform: translateY(30px) scale(0.95); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+        .search-spinner {
+          display: inline-block;
+          width: 16px;
+          height: 16px;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-top-color: #ffffff;
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
         }
 
         /* ── Theme Styling & Layout Enhancements ── */
