@@ -76,20 +76,38 @@ export default function TableWiseClassification() {
           doc.line(margin, y, pageWidth - margin, y);
           y += 6;
 
-          // Main Header Text (Tally style - uppercase, centered, bold)
+          // Blank Circle with Number inside (Non-colorful Black & White)
+          const circleR = 11;
+          const circleX = (pageWidth / 2) - 55;
+          const circleY = y + 8;
+
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(0, 0, 0);
+          doc.setLineWidth(1.3);
+          doc.circle(circleX, circleY, circleR, "FD");
+
           doc.setFont('Courier', 'bold');
-          doc.setFontSize(14);
+          doc.setFontSize(11);
           doc.setTextColor(0, 0, 0);
-          const title = 'TABLE-WISE CLASSIFICATION REPORT';
-          const titleWidth = doc.getTextWidth(title);
-          doc.text(title, (pageWidth - titleWidth) / 2, y);
-          y += 6;
+          doc.text("3", circleX, circleY + 3.5, { align: "center" });
+
+          // Header Text
+          doc.setFont('Courier', 'bold');
+          doc.setFontSize(8.5);
+          doc.setTextColor(0, 0, 0);
+          doc.text("3RD REPORT", circleX + 16, circleY - 1);
+
+          doc.setFont('Courier', 'bold');
+          doc.setFontSize(11.5);
+          doc.setTextColor(0, 0, 0);
+          doc.text("TABLE-WISE CLASSIFICATION", circleX + 16, circleY + 9);
+          y += 24;
 
           // Subtitle
           doc.setFont('Courier', 'normal');
-          doc.setFontSize(9);
-          doc.setTextColor(0, 0, 0);
-          const subtitle = 'ACTIVE / PENDING CUTTING LOTS PER TABLE';
+          doc.setFontSize(8);
+          doc.setTextColor(80, 80, 80);
+          const subtitle = 'ACTIVE / PENDING CUTTING LOTS & CAPACITY PER TABLE';
           const subWidth = doc.getTextWidth(subtitle);
           doc.text(subtitle, (pageWidth - subWidth) / 2, y);
           y += 5;
@@ -98,16 +116,16 @@ export default function TableWiseClassification() {
           doc.setLineWidth(0.4);
           doc.setDrawColor(0, 0, 0);
           doc.line(margin, y, pageWidth - margin, y);
-          y += 6;
+          y += 5;
 
           // Tally Meta info
           doc.setFont('Courier', 'normal');
-          doc.setFontSize(8.5);
+          doc.setFontSize(8);
           doc.setTextColor(0, 0, 0);
-          doc.text(`REPORT NAME   : TABLE-WISE CLASSIFICATION`, margin + 2, y);
+          doc.text(`REPORT NO     : (3) 3RD REPORT - TABLE-WISE CLASSIFICATION`, margin + 2, y);
           const dateStr = new Date().toLocaleString().toUpperCase();
           doc.text(`PRINTED ON    : ${dateStr}`, pageWidth - margin - 85, y);
-          y += 4.5;
+          y += 4;
           doc.text(`ACTIVE TABLES : ${totalActiveTables}`, margin + 2, y);
           doc.text(`PENDING LOTS  : ${totalPendingLots}`, pageWidth - margin - 85, y);
           y += 4.5;
@@ -289,6 +307,65 @@ export default function TableWiseClassification() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      
+      {/* MD Daily Report 3rd Report Header */}
+      <div style={{
+        background: '#1E293B',
+        padding: '16px 22px',
+        borderRadius: '14px',
+        color: '#FFFFFF',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+        border: '1px solid #334155'
+      }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '3px 12px 3px 4px',
+              borderRadius: '20px',
+              border: '1.5px solid #FFFFFF',
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: '#FFFFFF'
+            }}>
+              <span style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                border: '1.5px solid #FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 900,
+                fontSize: '12px',
+                color: '#FFFFFF',
+                background: 'rgba(0,0,0,0.2)'
+              }}>
+                3
+              </span>
+              <span style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                3rd Report
+              </span>
+            </div>
+            <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, color: '#94A3B8' }}>
+              Cutting Operations · 3rd Report
+            </span>
+          </div>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#F8FAFC' }}>
+            Table-Wise Production & Efficiency Classification (3rd Report)
+          </h2>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#CBD5E1' }}>
+            Real-time table utilization, supervisor allocation & active lot queue.
+          </p>
+        </div>
+      </div>
+
       {/* Overview Cards & Search Row */}
       <div style={{
         display: 'flex',

@@ -6,7 +6,7 @@ import {
   Printer, Play, Square, RotateCcw,
   CheckCircle2, AlertTriangle, AlertCircle,
   X, CheckCircle, PackagePlus, Eye, Save,
-  Box, Hourglass
+  Box, Hourglass, ArrowLeft
 } from 'lucide-react';
 import '../Design/FabricStickerForm.css';
 
@@ -716,11 +716,42 @@ const ReAddMaterialForm = () => {
       {/* Dynamic Notifications area */}
       <div id="notification-area" className="notification-area" />
 
-      {/* Title Header */}
-      <div className="page-header">
-        <div className="page-title-block">
-          <div className="breadcrumb"><span>Home</span><span>/</span><span>Stock Re-Add</span></div>
-          <h1>Material Re Add In Stock</h1>
+      {/* Enhanced Page Header with Back Button */}
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+        <div className="page-title-block" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button
+            type="button"
+            className="btn-back-nav"
+            onClick={() => navigate(-1)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: '1.5px solid var(--border, #CBD5E1)',
+              background: 'var(--surface, #FFFFFF)',
+              color: 'var(--text-primary, #0F172A)',
+              fontWeight: 800,
+              fontSize: '13px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+          <div>
+            <div className="breadcrumb" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 700 }}>
+              <span>Home</span><span>/</span><span>Stock Add</span><span>/</span><span style={{ color: 'var(--primary, #2563EB)' }}>Material Re-Add</span>
+            </div>
+            <h1 style={{ margin: '2px 0 0 0', fontSize: '22px', fontWeight: 900, letterSpacing: '-0.5px' }}>
+              Re-Add Material In Stock
+            </h1>
+            <p style={{ margin: '3px 0 0 0', color: 'var(--text-muted, #64748B)', fontSize: '12.5px' }}>
+              Re-inward returned or surplus fabric rolls back into warehouse stock with fresh barcode tags.
+            </p>
+          </div>
         </div>
       </div>
 

@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { store, BASE_URL } from '../store.js';
 import {
   FileText, Search, RefreshCw, CheckCircle2,
   AlertTriangle, AlertCircle, ArrowUpDown, ChevronDown, Check,
-  Database, ShoppingBag, Eye, TrendingDown, TrendingUp
+  Database, ShoppingBag, Eye, TrendingDown, TrendingUp, ArrowLeft
 } from 'lucide-react';
 
 const FabricPoAudit = () => {
+  const navigate = useNavigate();
   const [auditData, setAuditData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -149,30 +151,78 @@ const FabricPoAudit = () => {
 
   return (
     <div style={{
+      width: '100%',
       minHeight: '100vh',
-      padding: '32px 40px',
+      padding: '4px 0 32px 0',
       fontFamily: "'Outfit', 'Inter', sans-serif",
-      backgroundColor: '#fff',
       color: '#1e293b'
     }}>
-      {/* Header section */}
+      {/* Enhanced Header section with Back button */}
       <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 24
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)',
-            border: '1px solid rgba(79, 70, 229, 0.15)',
-            padding: 12, borderRadius: 16, color: '#4f46e5'
-          }}>
-            <Database size={24} />
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button
+            type="button"
+            className="btn-back-nav"
+            onClick={() => navigate(-1)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: '1.5px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#0F172A',
+              fontWeight: 800,
+              fontSize: '13px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
           <div>
-            <h1 style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-0.75px' }}>
-              Fabric PO Audit
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '2px 10px 2px 3px',
+                borderRadius: '20px',
+                border: '1.5px solid #0F172A',
+                background: '#FFFFFF',
+                color: '#0F172A'
+              }}>
+                <span style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  border: '1.5px solid #0F172A',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 900,
+                  fontSize: '11px',
+                  color: '#0F172A'
+                }}>
+                  10
+                </span>
+                <span style={{ fontWeight: 800, fontSize: '10.5px', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                  10th Report
+                </span>
+              </div>
+              <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 700, color: '#64748B' }}>
+                Stock Add / Procurement & Inward
+              </span>
+            </div>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-0.75px' }}>
+              Fabric Purchase Order Audit Report
             </h1>
-            <p style={{ fontSize: '13px', color: '#64748b', marginTop: 4, marginBottom: 0, fontWeight: 500 }}>
-              Verify Purchase Order quantities in Google Sheet against actual received rolls and measurements in database.
+            <p style={{ fontSize: '12.5px', color: '#64748b', marginTop: 2, marginBottom: 0, fontWeight: 500 }}>
+              Verify Purchase Order quantities against actual received rolls and measurements in database.
             </p>
           </div>
         </div>

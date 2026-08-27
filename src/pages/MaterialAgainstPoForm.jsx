@@ -4,7 +4,7 @@ import { store, BASE_URL } from '../store.js';
 import LocationPicker from '../components/LocationPicker.jsx';
 import {
   Printer, Play, Square, RotateCcw,
-  AlertTriangle, AlertCircle, CheckCircle, Box, Hourglass, FileText
+  AlertTriangle, AlertCircle, CheckCircle, Box, Hourglass, FileText, ArrowLeft
 } from 'lucide-react';
 
 const MaterialAgainstPoForm = () => {
@@ -679,17 +679,17 @@ const MaterialAgainstPoForm = () => {
 
   return (
     <div style={{
+      width: '100%',
       minHeight: '100vh',
-      padding: '32px 40px',
+      padding: '4px 0 32px 0',
       fontFamily: "'Outfit', 'Inter', sans-serif",
-      backgroundColor: '#fff',
       color: '#1e293b'
     }}>
       {/* Floating Active Progress Panel */}
       {batchActive && (
         <div style={{
           position: 'fixed', right: 32, top: 120, width: 320, zIndex: 100,
-          background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(16px)',
+          background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(16px)',
           border: '1px solid rgba(79, 70, 229, 0.15)', borderRadius: 24,
           padding: '24px 20px', boxShadow: '0 20px 40px -15px rgba(0,0,0,0.1)',
           animation: 'slideIn 0.3s ease-out'
@@ -747,19 +747,38 @@ const MaterialAgainstPoForm = () => {
         </div>
       )}
 
-      {/* Page Header */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)', border: '1px solid rgba(79, 70, 229, 0.15)', padding: 12, borderRadius: 16, color: '#4f46e5' }}>
-            <FileText size={24} />
-          </div>
+      {/* Enhanced Page Header with Back Button */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button
+            type="button"
+            className="btn-back-nav"
+            onClick={() => navigate(-1)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: '1.5px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#0F172A',
+              fontWeight: 800,
+              fontSize: '13px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
           <div>
-            <h1 style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-0.75px' }}>
-              Add Material Against PO (Meters)
+            <div className="breadcrumb" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 700, color: '#64748B' }}>
+              <span>Home</span><span> / </span><span>Stock Add</span><span> / </span><span style={{ color: '#4F46E5', fontWeight: 800 }}>Material Against PO</span>
+            </div>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', margin: '2px 0 0 0', letterSpacing: '-0.75px' }}>
+              Add Material Against PO (Linear Meters)
             </h1>
-            <p style={{ fontSize: '13px', color: '#64748b', marginTop: 4, marginBottom: 0, fontWeight: 500 }}>
-              Verify Purchase Order details and enter fabric roll measurements manually in meters.
-            </p>
           </div>
         </div>
       </div>

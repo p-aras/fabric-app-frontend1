@@ -40,6 +40,10 @@ import CutterMasterWiseReport from './pages/CutterMasterWiseReport.jsx';
 import DailyCuttingReport from './pages/DailyCuttingReport.jsx';
 import HallWiseCuttingReport from './pages/HallWiseCuttingReport.jsx';
 import TableWiseClassification from './pages/TableWiseClassification.jsx';
+import ShortageReportForm from './pages/ShortageReportForm.jsx';
+import SoftwareGuidePage from './pages/SoftwareGuidePage.jsx';
+import MDReportsHub from './pages/MDReportsHub.jsx';
+
 
 
 export default function App() {
@@ -278,6 +282,10 @@ export default function App() {
               <Route path="/re-add-material" element={<ReAddMaterialForm />} />
               <Route path="/attendance" element={<AttendancePage />} />
               <Route path="/approvals" element={<ApprovalPanelPage />} />
+              <Route path="/shortage-report-form" element={<ShortageReportForm />} />
+              <Route path="/software-guide" element={<SoftwareGuidePage />} />
+              <Route path="/md-reports" element={<MDReportsHub />} />
+              <Route path="/executive-reports" element={<MDReportsHub />} />
 
 
 

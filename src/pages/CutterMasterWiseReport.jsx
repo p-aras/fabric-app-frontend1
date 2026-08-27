@@ -319,27 +319,50 @@ export default function CutterMasterWiseReport() {
 
     drawPageBorder();
 
-    // Left Side - Header Title
-    doc.setTextColor(0, 0, 0);
-    setFont("bold", 14);
-    doc.text("CUTTER MASTER WISE ISSUANCE REPORT", M + 15, y + 15);
+    // Left Side - Blank Circle with Number inside (Non-colorful Black & White)
+    const circleR = 12;
+    const circleX = M + 15 + circleR;
+    const circleY = y + 17;
 
-    setFont("normal", 9);
-    doc.text(`Period: ${startDate} to ${endDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+    // Draw Blank Circle with clean solid black border
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.4);
+    doc.circle(circleX, circleY, circleR, "FD");
+
+    // Round number written inside the circle
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 12);
+    doc.text("7", circleX, circleY + 4, { align: "center" });
+
+    // Numbering Label & Title
+    setFont("bold", 8);
+    doc.setTextColor(0, 0, 0);
+    doc.text("7TH REPORT", M + 45, y + 11);
+
+    setFont("bold", 13);
+    doc.setTextColor(0, 0, 0);
+    doc.text("CUTTER MASTER WISE PERFORMANCE REPORT", M + 45, y + 25);
+
+    setFont("normal", 8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Period: ${startDate} to ${endDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 45, y + 36);
 
     // Right Side - Today's Attendance Block
+    doc.setTextColor(0, 0, 0);
     setFont("bold", 8);
     doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 290, y + 10);
     setFont("normal", 7.5);
+    doc.setTextColor(60, 60, 60);
     doc.text(attData.summary, PAGE_W - M - 290, y + 21);
     doc.text(attData.absenteesText, PAGE_W - M - 290, y + 31);
 
     // Divider Line
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 39, PAGE_W - M, y + 39);
+    doc.line(M, y + 44, PAGE_W - M, y + 44);
 
-    y += 54;
+    y += 58;
 
     // Summary Metrics Box
     doc.setFillColor(255, 255, 255);

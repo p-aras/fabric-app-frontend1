@@ -46,20 +46,25 @@ function MultiSelect({ label, options, selectedValues, onChange, placeholder }) 
     <div className="multiselect-container" ref={containerRef} style={{ position: 'relative', minWidth: '160px', zIndex: isOpen ? 101 : 1 }}>
       <button
         type="button"
-        className="form-control"
+        className="multiselect-trigger-btn"
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           textAlign: 'left',
           cursor: 'pointer',
-          background: 'var(--surface)',
-          borderColor: isOpen ? 'var(--primary)' : 'var(--border)',
+          background: 'var(--bg, #F8FAFC)',
+          border: isOpen ? '1.5px solid #2563EB' : '1.5px solid var(--border, #E2E8F0)',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          fontSize: '12.5px',
+          fontWeight: '600',
+          color: selectedValues.length > 0 ? '#2563EB' : 'var(--text-primary, #0F172A)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          paddingRight: '12px',
-          width: '100%'
+          width: '100%',
+          boxSizing: 'border-box'
         }}
         onClick={() => setIsOpen(!isOpen)}
       >
@@ -68,7 +73,7 @@ function MultiSelect({ label, options, selectedValues, onChange, placeholder }) 
             ? placeholder
             : `${label} (${selectedValues.length})`}
         </span>
-        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>▼</span>
+        <span style={{ fontSize: '10px', color: '#94A3B8', marginLeft: '6px' }}>▼</span>
       </button>
 
       {isOpen && (
@@ -1081,47 +1086,67 @@ export default function Materials() {
   const getSupplierName = (id) => suppliers.find(s => s.id === id)?.name || '—';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div className="page-header">
-        <div className="page-title-block" style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+    <div className="materials-page-container" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      
+      {/* ── Page Header & Quick Export Actions ── */}
+      <div className="materials-header-card">
+        <div className="materials-title-group">
           <button
             onClick={() => window.history.back()}
-            className="btn btn-secondary btn-icon btn-sm"
-            style={{ borderRadius: '50%', width: 32, height: 32, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
+            className="materials-back-btn"
             title="Go Back"
           >
             <ArrowLeft size={16} />
           </button>
           <div>
-            <div className="breadcrumb"><span>Home</span><span>/</span><span>Material Master</span></div>
-            <h1 style={{ margin: 0 }}>Material Master</h1>
-            <p style={{ margin: '4px 0 0 0' }}>Manage fabric materials, colors, rolls, and warehouse placement.</p>
+            <div className="materials-breadcrumb">
+              <span>Home</span>
+              <span className="sep">/</span>
+              <span className="current">Material Master</span>
+            </div>
+            <h1 className="materials-page-title">Material Master & Fabric Registry</h1>
+            <p className="materials-page-subtitle">
+              Comprehensive registry of fabric materials, roll barcodes, color shades, and warehouse rack placement.
+            </p>
           </div>
         </div>
-        <div className="page-actions" style={{ display: 'flex', gap: 10 }}>
+
+        <div className="materials-action-buttons">
           <button
-            className="btn btn-secondary btn-sm"
+            className="mat-action-btn secondary"
             id="toggle-inventory-btn"
             onClick={() => navigate('/old-inventory')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <Package size={14} />
-            View Old Inventory
+            <span>View Old Inventory</span>
           </button>
-          <button className="btn btn-secondary btn-sm" id="export-materials-csv-btn" onClick={handleExport}><Download size={14} /> Export CSV</button>
-          <button className="btn btn-secondary btn-sm" id="export-materials-pdf-btn" onClick={exportToPdf}><Download size={14} /> Export PDF</button>
-          {/* <button className="btn btn-primary btn-sm" id="add-material-btn" onClick={() => { setEditMat(null); setShowForm(true); }}><Plus size={14} /> Add Material</button> */}
+          <button
+            className="mat-action-btn emerald"
+            id="export-materials-csv-btn"
+            onClick={handleExport}
+          >
+            <Download size={14} />
+            <span>Export CSV</span>
+          </button>
+          <button
+            className="mat-action-btn blue"
+            id="export-materials-pdf-btn"
+            onClick={exportToPdf}
+          >
+            <Download size={14} />
+            <span>Export PDF</span>
+          </button>
         </div>
       </div>
 
-      {/* Advanced Filters */}
-      <div className="card" style={{ overflow: 'visible' }}>
-        <div className="card-body" style={{ padding: '16px', overflow: 'visible' }}>
-          {/* Quick Date Range Presets */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 4 }}>
-              📅 Date Preset:
-            </span>
+      {/* ── Advanced Filter Command Panel ── */}
+      <div className="materials-filter-panel">
+        {/* Quick Date Range Presets */}
+        <div className="date-presets-strip">
+          <span className="date-preset-label">
+            📅 Date Preset:
+          </span>
+          <div className="date-preset-pill-group">
             {[
               { key: '7days', label: '⚡ Weekly (Last 7 Days)' },
               { key: '30days', label: '🗓️ Last 30 Days' },
@@ -1134,174 +1159,159 @@ export default function Materials() {
                   key={preset.key}
                   type="button"
                   onClick={() => applyDatePreset(preset.key)}
-                  style={{
-                    padding: '5px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    border: '1px solid ' + (isActive ? 'var(--primary)' : 'var(--border)'),
-                    background: isActive ? 'var(--primary)' : 'var(--surface)',
-                    color: isActive ? '#ffffff' : 'var(--text-primary)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    boxShadow: isActive ? '0 2px 4px rgba(26,86,219,0.2)' : 'none'
-                  }}
+                  className={`preset-pill-btn ${isActive ? 'active' : ''}`}
                 >
                   {preset.label}
                 </button>
               );
             })}
-            {activeDatePreset === '7days' && (
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--primary)', backgroundColor: 'rgba(26,86,219,0.1)', padding: '3px 8px', borderRadius: '4px', marginLeft: 'auto' }}>
-                ⚡ Fast Weekly View Active
-              </span>
+          </div>
+          {activeDatePreset === '7days' && (
+            <span className="active-preset-badge">
+              ⚡ Fast Weekly View Active
+            </span>
+          )}
+        </div>
+
+        {/* Dynamic MultiSelect & Filter Inputs Grid */}
+        <div className="filter-inputs-grid">
+          <div className="search-bar-wrap" style={{ gridColumn: 'span 2', minWidth: '280px' }}>
+            <Search size={15} className="search-icon" />
+            <input
+              id="material-search"
+              placeholder="Search by name, code, lot, location..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="search-field-input"
+            />
+            {search && (
+              <button
+                type="button"
+                className="search-clear-btn"
+                onClick={() => setSearch('')}
+                title="Clear Search"
+              >
+                ✕
+              </button>
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, overflow: 'visible' }}>
-            <div className="search-bar" style={{ gridColumn: 'span 2', minWidth: '280px' }}>
-              <Search size={14} className="icon" />
-              <input id="material-search" placeholder="Search by name, code, location..." value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
+          <MultiSelect
+            label="Inventory Type"
+            options={['Normal Inventory', 'FabricStock(Mtrs)', 'Dyeing Material']}
+            selectedValues={selectedTypes}
+            onChange={vals => { setSelectedTypes(vals); }}
+            placeholder="All Inventory Types"
+          />
 
-            <MultiSelect
-              label="Inventory Type"
-              options={['Normal Inventory', 'FabricStock(Mtrs)', 'Dyeing Material']}
-              selectedValues={selectedTypes}
-              onChange={vals => { setSelectedTypes(vals); }}
-              placeholder="All Inventory Types"
+          <MultiSelect
+            label="Categories"
+            options={uniqueCategories}
+            selectedValues={selectedCats}
+            onChange={vals => { setSelectedCats(vals); }}
+            placeholder="All Categories"
+          />
+
+          <MultiSelect
+            label="Sub Categories"
+            options={availableSubCats}
+            selectedValues={selectedSubCats}
+            onChange={vals => { setSelectedSubCats(vals); }}
+            placeholder="All Sub Categories"
+          />
+
+          <MultiSelect
+            label="Status"
+            options={['Active', 'Low Stock', 'Inactive', 'Issued']}
+            selectedValues={selectedStatuses}
+            onChange={vals => { setSelectedStatuses(vals); }}
+            placeholder="All Status"
+          />
+
+          <MultiSelect
+            label="Suppliers"
+            options={suppliers.map(s => s.name)}
+            selectedValues={selectedSuppliers}
+            onChange={vals => { setSelectedSuppliers(vals); }}
+            placeholder="All Suppliers"
+          />
+
+          <MultiSelect
+            label="Colors"
+            options={uniqueColors}
+            selectedValues={selectedColors}
+            onChange={vals => { setSelectedColors(vals); }}
+            placeholder="All Colors"
+          />
+
+          <MultiSelect
+            label="Locations"
+            options={uniqueLocations}
+            selectedValues={selectedLocations}
+            onChange={vals => { setSelectedLocations(vals); }}
+            placeholder="All Locations"
+          />
+
+          <MultiSelect
+            label="Descriptions"
+            options={uniqueNames}
+            selectedValues={selectedNames}
+            onChange={vals => { setSelectedNames(vals); }}
+            placeholder="All Material Names"
+          />
+
+          <div className="date-input-wrap">
+            <input
+              type="date"
+              className="date-picker-control"
+              value={startDate}
+              onChange={e => { setStartDate(e.target.value); setActiveDatePreset('custom'); }}
+              title="Filter Start Date"
             />
-
-            <MultiSelect
-              label="Categories"
-              options={uniqueCategories}
-              selectedValues={selectedCats}
-              onChange={vals => { setSelectedCats(vals); }}
-              placeholder="All Categories"
-            />
-
-            <MultiSelect
-              label="Sub Categories"
-              options={availableSubCats}
-              selectedValues={selectedSubCats}
-              onChange={vals => { setSelectedSubCats(vals); }}
-              placeholder="All Sub Categories"
-            />
-
-            <MultiSelect
-              label="Status"
-              options={['Active', 'Low Stock', 'Inactive']}
-              selectedValues={selectedStatuses}
-              onChange={vals => { setSelectedStatuses(vals); }}
-              placeholder="All Status"
-            />
-
-            <MultiSelect
-              label="Suppliers"
-              options={suppliers.map(s => s.name)}
-              selectedValues={selectedSuppliers}
-              onChange={vals => { setSelectedSuppliers(vals); }}
-              placeholder="All Suppliers"
-            />
-
-            <MultiSelect
-              label="Colors"
-              options={uniqueColors}
-              selectedValues={selectedColors}
-              onChange={vals => { setSelectedColors(vals); }}
-              placeholder="All Colors"
-            />
-
-            <MultiSelect
-              label="Locations"
-              options={uniqueLocations}
-              selectedValues={selectedLocations}
-              onChange={vals => { setSelectedLocations(vals); }}
-              placeholder="All Locations"
-            />
-
-            <MultiSelect
-              label="Descriptions"
-              options={uniqueNames}
-              selectedValues={selectedNames}
-              onChange={vals => { setSelectedNames(vals); }}
-              placeholder="All Material Names"
-            />
-
-            <div className="form-group" style={{ minWidth: '150px' }}>
-              <input type="date" className="form-control" value={startDate} onChange={e => { setStartDate(e.target.value); setActiveDatePreset('custom'); }} placeholder="Start Date" title="Start Date" />
-            </div>
-
-            <div className="form-group" style={{ minWidth: '150px' }}>
-              <input type="date" className="form-control" value={endDate} onChange={e => { setEndDate(e.target.value); setActiveDatePreset('custom'); }} placeholder="End Date" title="End Date" />
-            </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => {
-                setSearch('');
-                setSelectedCats([]);
-                setSelectedSubCats([]);
-                setSelectedStatuses([]);
-                setSelectedSuppliers([]);
-                setSelectedColors([]);
-                setSelectedLocations([]);
-                setSelectedNames([]);
-                setSelectedTypes([]);
-                setBarcodeSeries('All');
-                applyDatePreset('7days');
-              }}
-            >
-              Reset Filters
-            </button>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Found <strong>{totalCount}</strong> items</span>
+          <div className="date-input-wrap">
+            <input
+              type="date"
+              className="date-picker-control"
+              value={endDate}
+              onChange={e => { setEndDate(e.target.value); setActiveDatePreset('custom'); }}
+              title="Filter End Date"
+            />
+          </div>
+        </div>
+
+        {/* Filter Summary & Reset Footer */}
+        <div className="filter-summary-row">
+          <button
+            type="button"
+            className="filter-reset-btn"
+            onClick={() => {
+              setSearch('');
+              setSelectedCats([]);
+              setSelectedSubCats([]);
+              setSelectedStatuses([]);
+              setSelectedSuppliers([]);
+              setSelectedColors([]);
+              setSelectedLocations([]);
+              setSelectedNames([]);
+              setSelectedTypes([]);
+              setBarcodeSeries('All');
+              applyDatePreset('7days');
+            }}
+          >
+            ↺ Reset All Filters
+          </button>
+          <div className="items-count-pill">
+            Found <strong>{totalCount.toLocaleString()}</strong> materials & rolls in registry
           </div>
         </div>
       </div>
 
-      {/* Summary Metrics */}
-      {/* <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginTop: 8 }}>
-        <div className="card" style={{ padding: '14px 18px', background: 'var(--surface)', borderRadius: '10px' }}>
-          <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)' }}>TOTAL ROLLS RECEIVED</div>
-          <div style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--primary)', marginTop: '4px' }}>
-            {filtered.reduce((sum, m) => sum + (parseInt(m.rolls) || 0), 0)} Rolls
-          </div>
-        </div>
-        <div className="card" style={{ padding: '14px 18px', background: 'var(--surface)', borderRadius: '10px' }}>
-          <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)' }}>TOTAL QUANTITY (KG)</div>
-          <div style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--success)', marginTop: '4px' }}>
-            {filtered.filter(m => m.unit !== 'MTR').reduce((sum, m) => sum + (parseFloat(m.weight) || 0.0), 0).toFixed(2)} KG
-          </div>
-        </div>
-        <div className="card" style={{ padding: '14px 18px', background: 'var(--surface)', borderRadius: '10px' }}>
-          <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)' }}>TOTAL QUANTITY (MTRS)</div>
-          <div style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--accent)', marginTop: '4px' }}>
-            {filtered.filter(m => m.unit === 'MTR').reduce((sum, m) => sum + (parseFloat(m.weight) || 0.0), 0).toFixed(2)} MTR
-          </div>
-        </div>
-      </div> */}
-
-      {/* Barcode Series and Custom Filters Row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: '16px' }}>
-        {/* Barcode Series Segregation Tabs */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 8,
-          background: 'var(--surface)',
-          padding: '8px 14px',
-          borderRadius: '10px',
-          border: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-sm)',
-          width: 'fit-content'
-        }}>
-          <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', marginRight: 8, letterSpacing: '0.05em' }}>
-            Barcode Series:
-          </span>
+      {/* ── Barcode Series & Segregation Segment Bar ── */}
+      <div className="barcode-series-toolbar">
+        <div className="series-pill-group">
+          <span className="series-title">Barcode Series:</span>
           {[
             { key: 'All', label: 'All Barcodes' },
             { key: '9', label: 'Series 9 (Re-Added)' },
@@ -1314,17 +1324,7 @@ export default function Materials() {
               <button
                 key={tab.key}
                 onClick={() => setBarcodeSeries(tab.key)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  border: '1px solid ' + (isActive ? 'var(--primary)' : 'var(--border)'),
-                  background: isActive ? 'var(--primary)' : 'transparent',
-                  color: isActive ? '#ffffff' : 'var(--text-primary)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
+                className={`series-tab-btn ${isActive ? 'active' : ''}`}
               >
                 {tab.label}
               </button>
@@ -1332,38 +1332,22 @@ export default function Materials() {
           })}
         </div>
 
-        {/* Skip Re-add Lots Filter */}
-        <label style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          cursor: 'pointer',
-          fontSize: '12px',
-          fontWeight: 700,
-          color: 'var(--text-primary)',
-          background: 'var(--surface)',
-          padding: '9px 14px',
-          borderRadius: '10px',
-          border: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-sm)',
-          userSelect: 'none',
-          height: '40px',
-          boxSizing: 'border-box'
-        }}>
+        {/* Skip Re-add Lots Filter Toggle */}
+        <label className="skip-readd-checkbox-card">
           <input
             type="checkbox"
             checked={skipReAdd}
             onChange={e => setSkipReAdd(e.target.checked)}
-            style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: 'var(--primary)' }}
+            className="skip-readd-input"
           />
-          Skip Re-Add Lots
+          <span>Skip Re-Add Lots</span>
         </label>
       </div>
 
-      {/* Table */}
-      <div className="old-inventory-card">
-        <div className="old-inventory-table-wrap">
-          <table className="old-inventory-table">
+      {/* ── High-Tech Materials Master Table ── */}
+      <div className="materials-table-card">
+        <div className="materials-table-wrapper">
+          <table className="materials-master-table">
             <thead>
               <tr>
                 <th>Code</th>
@@ -1376,79 +1360,167 @@ export default function Materials() {
                 <th>Stock (Rolls)</th>
                 <th>Location</th>
                 <th>Status</th>
-                <th>Actions</th>
+                <th style={{ textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11}>
-                  <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
-                    <div style={{ display: 'inline-block', width: '28px', height: '28px', border: '3px solid rgba(26,86,219,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '10px' }}></div>
-                    <div style={{ fontSize: '13px', fontWeight: 600 }}>Loading materials data...</div>
-                  </div>
-                </td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={11}>
-                  <div className="empty-state">
-                    <div className="empty-state-icon"><Package size={28} /></div>
-                    <h3>No Materials Found</h3>
-                    <p>Try adjusting your search or add a new material.</p>
-                  </div>
-                </td></tr>
-              ) : filtered.map(m => (
-                <tr key={m.id}>
-                  <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>{m.code}</td>
-                  <td style={{ fontWeight: 600 }}>{m.name}</td>
-                  <td><span className="badge badge-primary" style={{ fontSize: 11 }}>{m.category}</span></td>
-                  <td>{m.color || '—'}</td>
-                  <td style={{ fontWeight: 600 }}>{m.lotNo || '—'}</td>
-                  <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{getSupplierName(m.supplier)}</td>
-                  <td>{m.weight} {(m.inventoryType === 'Dyeing Material' || m.category === 'Dyeing') ? 'KGS' : (m.unit || 'Kg')}</td>
-                  <td style={{ fontWeight: 700 }}>{m.rolls}</td>
-                  <td><span className="tag" style={{ fontSize: 11 }}>{m.location}</span></td>
-                  <td>
-                    <span className={`badge ${m.status === 'Active' ? 'badge-success' : m.status === 'Low Stock' ? 'badge-warning' : 'badge-secondary'}`}>
-                      {m.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <button className="btn btn-ghost btn-icon btn-sm" title="View QR" id={`qr-btn-${m.id}`} onClick={() => setShowQR(m)}><QrCode size={14} /></button>
-                      <button className="btn btn-ghost btn-icon btn-sm" title="Edit" id={`edit-mat-${m.id}`} onClick={() => { setEditMat(m); setShowForm(true); }}><Edit size={14} /></button>
-                      <button className="btn btn-ghost btn-icon btn-sm" title="Delete" id={`del-mat-${m.id}`} onClick={() => handleDelete(m.id)} style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                <tr>
+                  <td colSpan={11}>
+                    <div className="table-loading-container">
+                      <div className="table-loading-spinner" />
+                      <div className="loading-text">Loading warehouse materials registry...</div>
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={11}>
+                    <div className="empty-materials-state">
+                      <div className="empty-icon-box"><Package size={32} /></div>
+                      <h3>No Materials Found</h3>
+                      <p>Try clearing your active filters or searching for another barcode / lot number.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filtered.map(m => {
+                const statusStr = String(m.status || '').toLowerCase();
+                let statusBadgeClass = 'badge-active';
+                let statusLabel = m.status || 'Active';
+
+                if (statusStr.includes('low')) {
+                  statusBadgeClass = 'badge-low';
+                  statusLabel = 'Low Stock';
+                } else if (statusStr.includes('issue')) {
+                  statusBadgeClass = 'badge-issued';
+                  statusLabel = 'Issued';
+                } else if (statusStr.includes('inact')) {
+                  statusBadgeClass = 'badge-inactive';
+                  statusLabel = 'Inactive';
+                }
+
+                return (
+                  <tr key={m.id} className="material-data-row">
+                    {/* Code */}
+                    <td>
+                      <span className="material-code-pill">
+                        {m.code}
+                      </span>
+                    </td>
+
+                    {/* Material Name */}
+                    <td>
+                      <div className="material-name-cell">
+                        <span className="material-title-text">{m.name}</span>
+                        {m.inventoryType && m.inventoryType !== 'Normal Inventory' && (
+                          <span className="material-sub-type">{m.inventoryType}</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Category */}
+                    <td>
+                      <span className="category-chip">
+                        {m.category || 'General'}
+                      </span>
+                    </td>
+
+                    {/* Color */}
+                    <td>
+                      <span className="color-cell-text">{m.color || '—'}</span>
+                    </td>
+
+                    {/* Lot Number */}
+                    <td>
+                      <span className="lot-number-pill">
+                        {m.lotNo || 'OLD STOCK'}
+                      </span>
+                    </td>
+
+                    {/* Supplier */}
+                    <td>
+                      <span className="supplier-text">{getSupplierName(m.supplier)}</span>
+                    </td>
+
+                    {/* Weight / Meters */}
+                    <td>
+                      <span className="weight-badge">
+                        {m.weight} {(m.inventoryType === 'Dyeing Material' || m.category === 'Dyeing') ? 'KGS' : (m.unit || 'Kg')}
+                      </span>
+                    </td>
+
+                    {/* Stock Rolls */}
+                    <td>
+                      <span className={`rolls-count-pill ${parseInt(m.rolls) > 0 ? 'in-stock' : 'zero-stock'}`}>
+                        {m.rolls} {parseInt(m.rolls) === 1 ? 'Roll' : 'Rolls'}
+                      </span>
+                    </td>
+
+                    {/* Location */}
+                    <td>
+                      <span className="location-chip">
+                        📍 {m.location || 'Unassigned'}
+                      </span>
+                    </td>
+
+                    {/* Status */}
+                    <td>
+                      <span className={`status-pill ${statusBadgeClass}`}>
+                        <span className="status-dot" />
+                        {statusLabel}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td>
+                      <div className="actions-btn-group">
+                        <button
+                          className="row-action-btn qr-btn"
+                          title="Generate QR / Barcode"
+                          id={`qr-btn-${m.id}`}
+                          onClick={() => setShowQR(m)}
+                        >
+                          <QrCode size={13} />
+                        </button>
+                        <button
+                          className="row-action-btn edit-btn"
+                          title="Edit Material"
+                          id={`edit-mat-${m.id}`}
+                          onClick={() => { setEditMat(m); setShowForm(true); }}
+                        >
+                          <Edit size={13} />
+                        </button>
+                        <button
+                          className="row-action-btn delete-btn"
+                          title="Delete Material"
+                          id={`del-mat-${m.id}`}
+                          onClick={() => handleDelete(m.id)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Pagination Controls */}
+      {/* ── Pagination Controls ── */}
       {totalPages > 1 && (
-        <div className="pagination-wrap" style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: '16px',
-          padding: '12px 16px',
-          background: 'var(--surface)',
-          borderRadius: '8px',
-          border: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-sm)'
-        }}>
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            Showing <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> to <strong>{Math.min(currentPage * itemsPerPage, totalCount)}</strong> of <strong>{totalCount}</strong> materials
+        <div className="materials-pagination-bar">
+          <div className="pagination-info-text">
+            Showing <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> to <strong>{Math.min(currentPage * itemsPerPage, totalCount)}</strong> of <strong>{totalCount.toLocaleString()}</strong> materials
           </div>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <div className="pagination-controls-row">
             <button
-              className="btn btn-secondary btn-sm"
+              className="pagination-nav-btn"
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
-              Previous
+              ← Previous
             </button>
             
             {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => {
@@ -1456,46 +1528,35 @@ export default function Materials() {
                 return (
                   <button
                     key={pageNum}
-                    className={`btn btn-sm ${currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}`}
+                    className={`pagination-num-btn ${currentPage === pageNum ? 'active' : ''}`}
                     onClick={() => setCurrentPage(pageNum)}
-                    style={{
-                      minWidth: '32px',
-                      height: '32px',
-                      padding: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: currentPage === pageNum ? 'bold' : 'normal'
-                    }}
                   >
                     {pageNum}
                   </button>
                 );
               } else if (pageNum === currentPage - 3 || pageNum === currentPage + 3) {
-                return <span key={pageNum} style={{ padding: '0 4px', color: 'var(--text-muted)' }}>...</span>;
+                return <span key={pageNum} className="pagination-ellipsis">...</span>;
               }
               return null;
             })}
 
             <button
-              className="btn btn-secondary btn-sm"
+              className="pagination-nav-btn"
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
-              style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
-              Next
+              Next →
             </button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Show:</span>
+          <div className="pagination-page-size-wrap">
+            <span>Show per page:</span>
             <select
-              className="form-control"
+              className="page-size-select"
               value={itemsPerPage}
               onChange={e => {
                 setItemsPerPage(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              style={{ width: '80px', padding: '4px 8px', height: 'auto', fontSize: '13px' }}
             >
               <option value={10}>10</option>
               <option value={25}>25</option>
@@ -1518,85 +1579,841 @@ export default function Materials() {
       )}
       {showQR && <BarcodeModal material={showQR} onClose={() => setShowQR(null)} />}
 
-      {/* Custom Premium Styles for Table and Animations */}
+      {/* ── LUXURY STYLING INJECTION ── */}
       <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+        /* 1. Header Card */
+        .materials-header-card {
+          background: var(--surface, #FFFFFF);
+          border: 1px solid var(--border, #E2E8F0);
+          border-radius: 12px;
+          padding: 18px 22px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 16px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+        }
+        .dark .materials-header-card {
+          background: #1E293B;
+          border-color: #334155;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
         }
 
-        .old-inventory-card {
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          box-shadow: var(--shadow-md);
-          background: var(--surface);
-          overflow: hidden;
-          margin-top: 8px;
+        .materials-title-group {
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
         }
-        
-        .old-inventory-table-wrap {
+
+        .materials-back-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: 9px;
+          border: 1px solid var(--border, #E2E8F0);
+          background: var(--bg, #F8FAFC);
+          color: var(--text-primary, #0F172A);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.2s;
+          margin-top: 2px;
+        }
+        .dark .materials-back-btn {
+          background: #0F172A;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+        .materials-back-btn:hover {
+          background: #2563EB;
+          color: #FFFFFF;
+          border-color: #2563EB;
+        }
+
+        .materials-breadcrumb {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11.5px;
+          font-weight: 700;
+          color: var(--text-secondary, #64748B);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 4px;
+        }
+        .materials-breadcrumb .sep { opacity: 0.4; }
+        .materials-breadcrumb .current { color: #2563EB; }
+        .dark .materials-breadcrumb .current { color: #60A5FA; }
+
+        .materials-page-title {
+          margin: 0;
+          font-size: 22px;
+          font-weight: 850;
+          color: var(--text-primary, #0F172A);
+          letter-spacing: -0.5px;
+        }
+        .dark .materials-page-title {
+          color: #F8FAFC;
+        }
+
+        .materials-page-subtitle {
+          margin: 4px 0 0 0;
+          font-size: 13px;
+          color: var(--text-secondary, #64748B);
+        }
+        .dark .materials-page-subtitle {
+          color: #94A3B8;
+        }
+
+        .materials-action-buttons {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .mat-action-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          border-radius: 8px;
+          font-size: 12.5px;
+          font-weight: 750;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          border: 1px solid transparent;
+        }
+        .mat-action-btn.secondary {
+          background: var(--bg, #F8FAFC);
+          border-color: var(--border, #E2E8F0);
+          color: var(--text-primary, #0F172A);
+        }
+        .dark .mat-action-btn.secondary {
+          background: #0F172A;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+        .mat-action-btn.secondary:hover {
+          background: #E2E8F0;
+        }
+        .dark .mat-action-btn.secondary:hover {
+          background: #334155;
+        }
+
+        .mat-action-btn.emerald {
+          background: #10B981;
+          color: #FFFFFF;
+          box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+        }
+        .mat-action-btn.emerald:hover {
+          background: #059669;
+          transform: translateY(-1px);
+        }
+
+        .mat-action-btn.blue {
+          background: linear-gradient(135deg, #1E40AF 0%, #2563EB 100%);
+          color: #FFFFFF;
+          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+        }
+        .mat-action-btn.blue:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+        }
+
+        /* 2. Filter Command Panel */
+        .materials-filter-panel {
+          background: var(--surface, #FFFFFF);
+          border: 1px solid var(--border, #E2E8F0);
+          border-radius: 12px;
+          padding: 16px 20px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .dark .materials-filter-panel {
+          background: #1E293B;
+          border-color: #334155;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+        }
+
+        .date-presets-strip {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border, #E2E8F0);
+        }
+        .dark .date-presets-strip {
+          border-bottom-color: #334155;
+        }
+        .date-preset-label {
+          font-size: 11px;
+          font-weight: 850;
+          color: var(--text-secondary, #64748B);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .date-preset-pill-group {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .preset-pill-btn {
+          padding: 5px 12px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 750;
+          border: 1px solid var(--border, #CBD5E1);
+          background: transparent;
+          color: var(--text-secondary, #64748B);
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .dark .preset-pill-btn {
+          border-color: #334155;
+          color: #94A3B8;
+        }
+        .preset-pill-btn.active {
+          background: #2563EB !important;
+          color: #FFFFFF !important;
+          border-color: #1D4ED8 !important;
+          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+        }
+        .active-preset-badge {
+          font-size: 11px;
+          font-weight: 750;
+          color: #2563EB;
+          background: rgba(37, 99, 235, 0.1);
+          padding: 3px 8px;
+          border-radius: 4px;
+          margin-left: auto;
+        }
+        .dark .active-preset-badge {
+          color: #93C5FD;
+          background: rgba(37, 99, 235, 0.2);
+        }
+
+        .filter-inputs-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 10px;
+        }
+
+        .search-bar-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+        .search-bar-wrap .search-icon {
+          position: absolute;
+          left: 12px;
+          color: #94A3B8;
+          pointer-events: none;
+        }
+        .search-field-input {
+          width: 100%;
+          padding: 8px 32px 8px 34px;
+          border-radius: 8px;
+          border: 1.5px solid var(--border, #E2E8F0);
+          background: var(--bg, #F8FAFC);
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-primary, #0F172A);
+          outline: none;
+          transition: all 0.2s;
+        }
+        .dark .search-field-input {
+          background: #0F172A;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+        .search-field-input:focus {
+          border-color: #2563EB;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .search-clear-btn {
+          position: absolute;
+          right: 10px;
+          background: transparent;
+          border: none;
+          color: #94A3B8;
+          cursor: pointer;
+          font-size: 11px;
+          padding: 2px 4px;
+        }
+
+        .date-input-wrap {
+          min-width: 140px;
+        }
+        .date-picker-control {
+          width: 100%;
+          padding: 8px 10px;
+          border-radius: 8px;
+          border: 1.5px solid var(--border, #E2E8F0);
+          background: var(--bg, #F8FAFC);
+          font-size: 12.5px;
+          font-weight: 600;
+          color: var(--text-primary, #0F172A);
+          outline: none;
+          box-sizing: border-box;
+        }
+        .dark .date-picker-control {
+          background: #0F172A;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+
+        .filter-summary-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding-top: 10px;
+          border-top: 1px solid var(--border, #E2E8F0);
+        }
+        .dark .filter-summary-row {
+          border-top-color: #334155;
+        }
+        .filter-reset-btn {
+          background: transparent;
+          border: none;
+          color: #2563EB;
+          font-size: 12px;
+          font-weight: 750;
+          cursor: pointer;
+        }
+        .dark .filter-reset-btn {
+          color: #60A5FA;
+        }
+        .filter-reset-btn:hover {
+          text-decoration: underline;
+        }
+        .items-count-pill {
+          font-size: 12.5px;
+          color: var(--text-secondary, #64748B);
+        }
+        .dark .items-count-pill {
+          color: #94A3B8;
+        }
+
+        /* 3. Barcode Series Toolbar */
+        .barcode-series-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        .series-pill-group {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+          background: var(--surface, #FFFFFF);
+          border: 1px solid var(--border, #E2E8F0);
+          border-radius: 10px;
+          padding: 6px 10px;
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+        }
+        .dark .series-pill-group {
+          background: #1E293B;
+          border-color: #334155;
+        }
+        .series-title {
+          font-size: 11px;
+          font-weight: 850;
+          color: var(--text-secondary, #64748B);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-right: 4px;
+        }
+        .series-tab-btn {
+          padding: 5px 11px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 750;
+          border: 1px solid transparent;
+          background: transparent;
+          color: var(--text-secondary, #64748B);
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .dark .series-tab-btn {
+          color: #94A3B8;
+        }
+        .series-tab-btn.active {
+          background: #2563EB !important;
+          color: #FFFFFF !important;
+          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+        }
+
+        .skip-readd-checkbox-card {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 14px;
+          background: var(--surface, #FFFFFF);
+          border: 1px solid var(--border, #E2E8F0);
+          border-radius: 9px;
+          font-size: 12px;
+          font-weight: 750;
+          color: var(--text-primary, #0F172A);
+          cursor: pointer;
+          user-select: none;
+        }
+        .dark .skip-readd-checkbox-card {
+          background: #1E293B;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+        .skip-readd-input {
+          accent-color: #2563EB;
+          width: 15px;
+          height: 15px;
+          cursor: pointer;
+        }
+
+        /* 4. Luxury Table Card */
+        .materials-table-card {
+          border-radius: 12px;
+          border: 1px solid var(--border, #E2E8F0);
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+          background: var(--surface, #FFFFFF);
+          overflow: hidden;
+        }
+        .dark .materials-table-card {
+          background: #1E293B;
+          border-color: #334155;
+          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .materials-table-wrapper {
           overflow-x: auto;
         }
 
-        .old-inventory-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 13px;
-          text-align: left;
+        .materials-master-table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+          font-size: 12.5px !important;
+          text-align: left !important;
         }
 
-        /* Royal blue header styling */
-        .old-inventory-table thead tr {
-          background: linear-gradient(135deg, #1e40af 0%, #1a56db 100%);
-          color: #ffffff;
+        .materials-master-table thead {
+          background: #1E3A8A !important;
+        }
+        .materials-master-table thead tr {
+          background: #1E3A8A !important;
+        }
+        .materials-master-table th {
+          padding: 14px 16px !important;
+          font-weight: 800 !important;
+          text-transform: uppercase !important;
+          font-size: 11px !important;
+          letter-spacing: 0.6px !important;
+          color: #FFFFFF !important;
+          background-color: #1E3A8A !important;
+          background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%) !important;
+          border: none !important;
+          border-bottom: 2px solid #1D4ED8 !important;
+          white-space: nowrap !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+        }
+        .dark .materials-master-table thead,
+        .dark .materials-master-table thead tr,
+        .dark .materials-master-table th {
+          background-color: #0F172A !important;
+          background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%) !important;
+          border-bottom-color: #2563EB !important;
+          color: #FFFFFF !important;
         }
 
-        .old-inventory-table th {
-          padding: 14px 16px;
-          font-weight: 600;
-          text-transform: uppercase;
-          font-size: 11px;
-          letter-spacing: 0.5px;
-          border-bottom: 2px solid #1d4ed8;
-          color: #ffffff !important;
-          background: transparent !important;
+        .materials-master-table td {
+          padding: 12px 16px !important;
+          border-bottom: 1px solid var(--border, #F1F5F9) !important;
+          border-right: 1px solid var(--border, #F1F5F9) !important;
+          color: var(--text-primary, #0F172A) !important;
+          vertical-align: middle !important;
         }
-
-        .old-inventory-table td {
-          padding: 12px 16px;
-          border-bottom: 1px solid var(--border);
-          border-right: 1px solid var(--border);
-          color: var(--text-primary);
-          vertical-align: middle;
-          transition: all 0.2s ease;
+        .dark .materials-master-table td {
+          border-bottom-color: #334155;
+          border-right-color: #334155;
+          color: #F8FAFC;
         }
-
-        /* Hide right border for last column */
-        .old-inventory-table td:last-child,
-        .old-inventory-table th:last-child {
+        .materials-master-table td:last-child,
+        .materials-master-table th:last-child {
           border-right: none;
         }
 
-        /* Row hover effect */
-        .old-inventory-table tbody tr {
-          transition: background-color 0.15s ease;
+        .material-data-row {
+          transition: background 0.15s ease;
+        }
+        .material-data-row:hover {
+          background: rgba(37, 99, 235, 0.05) !important;
+        }
+        .dark .material-data-row:hover {
+          background: rgba(37, 99, 235, 0.12) !important;
         }
 
-        .old-inventory-table tbody tr:hover {
-          background-color: rgba(26, 86, 219, 0.04) !important;
+        /* Alternating zebra stripes */
+        .materials-master-table tbody tr:nth-child(even) {
+          background: rgba(248, 250, 252, 0.5);
+        }
+        .dark .materials-master-table tbody tr:nth-child(even) {
+          background: rgba(15, 23, 42, 0.4);
         }
 
-        /* Alternating row colors for premium readability */
-        .old-inventory-table tbody tr:nth-child(even) {
-          background-color: rgba(248, 250, 252, 0.6);
+        /* Specific Cell Elements */
+        .material-code-pill {
+          font-family: 'JetBrains Mono', monospace;
+          font-weight: 800;
+          font-size: 12px;
+          color: #1E40AF;
+          background: rgba(37, 99, 235, 0.1);
+          padding: 3px 8px;
+          border-radius: 6px;
+          display: inline-block;
         }
-        
-        .dark .old-inventory-table tbody tr:nth-child(even) {
-          background-color: rgba(30, 41, 59, 0.4);
+        .dark .material-code-pill {
+          color: #93C5FD;
+          background: rgba(37, 99, 235, 0.2);
         }
 
-        .old-inventory-table tbody tr:nth-child(odd) {
-          background-color: var(--surface);
+        .material-name-cell {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .material-title-text {
+          font-weight: 750;
+          color: var(--text-primary, #0F172A);
+        }
+        .dark .material-title-text {
+          color: #F8FAFC;
+        }
+        .material-sub-type {
+          font-size: 10px;
+          color: #64748B;
+        }
+        .dark .material-sub-type {
+          color: #94A3B8;
+        }
+
+        .category-chip {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 2px 8px;
+          border-radius: 6px;
+          background: #E0E7FF;
+          color: #3730A3;
+        }
+        .dark .category-chip {
+          background: #312E81;
+          color: #C7D2FE;
+        }
+
+        .color-cell-text {
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .lot-number-pill {
+          font-weight: 750;
+          font-size: 11.5px;
+          color: var(--text-primary);
+        }
+
+        .supplier-text {
+          font-size: 11.5px;
+          color: var(--text-secondary, #64748B);
+        }
+        .dark .supplier-text {
+          color: #94A3B8;
+        }
+
+        .weight-badge {
+          font-weight: 800;
+          font-size: 11.5px;
+          color: #059669;
+          background: rgba(16, 185, 129, 0.1);
+          padding: 2px 8px;
+          border-radius: 6px;
+          display: inline-block;
+        }
+        .dark .weight-badge {
+          color: #6EE7B7;
+          background: rgba(16, 185, 129, 0.2);
+        }
+
+        .rolls-count-pill {
+          font-weight: 800;
+          font-size: 11.5px;
+          padding: 2px 8px;
+          border-radius: 6px;
+          display: inline-block;
+        }
+        .rolls-count-pill.in-stock {
+          background: rgba(37, 99, 235, 0.1);
+          color: #1D4ED8;
+        }
+        .dark .rolls-count-pill.in-stock {
+          background: rgba(37, 99, 235, 0.2);
+          color: #93C5FD;
+        }
+        .rolls-count-pill.zero-stock {
+          background: rgba(148, 163, 184, 0.15);
+          color: #64748B;
+        }
+        .dark .rolls-count-pill.zero-stock {
+          background: rgba(51, 65, 85, 0.5);
+          color: #94A3B8;
+        }
+
+        .location-chip {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 2px 8px;
+          border-radius: 6px;
+          background: var(--bg, #F8FAFC);
+          border: 1px solid var(--border, #CBD5E1);
+          color: var(--text-primary);
+        }
+        .dark .location-chip {
+          background: #0F172A;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 11px;
+          font-weight: 800;
+          padding: 2px 8px;
+          border-radius: 20px;
+        }
+        .status-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: currentColor;
+        }
+        .status-pill.badge-active {
+          background: #DCFCE7;
+          color: #15803D;
+        }
+        .dark .status-pill.badge-active {
+          background: rgba(16, 185, 129, 0.2);
+          color: #6EE7B7;
+        }
+        .status-pill.badge-low {
+          background: #FEF3C7;
+          color: #B45309;
+        }
+        .dark .status-pill.badge-low {
+          background: rgba(245, 158, 11, 0.2);
+          color: #FCD34D;
+        }
+        .status-pill.badge-issued {
+          background: #F1F5F9;
+          color: #475569;
+        }
+        .dark .status-pill.badge-issued {
+          background: rgba(51, 65, 85, 0.5);
+          color: #94A3B8;
+        }
+        .status-pill.badge-inactive {
+          background: #FEE2E2;
+          color: #B91C1C;
+        }
+        .dark .status-pill.badge-inactive {
+          background: rgba(239, 68, 68, 0.2);
+          color: #FCA5A5;
+        }
+
+        .actions-btn-group {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+        }
+        .row-action-btn {
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
+          border: 1px solid var(--border, #E2E8F0);
+          background: var(--bg, #F8FAFC);
+          color: var(--text-secondary, #64748B);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .dark .row-action-btn {
+          background: #0F172A;
+          border-color: #334155;
+          color: #94A3B8;
+        }
+        .row-action-btn.qr-btn:hover {
+          background: #2563EB;
+          color: #FFFFFF;
+          border-color: #2563EB;
+        }
+        .row-action-btn.edit-btn:hover {
+          background: #10B981;
+          color: #FFFFFF;
+          border-color: #10B981;
+        }
+        .row-action-btn.delete-btn:hover {
+          background: #EF4444;
+          color: #FFFFFF;
+          border-color: #EF4444;
+        }
+
+        /* 5. Pagination Bar */
+        .materials-pagination-bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 12px;
+          padding: 12px 18px;
+          background: var(--surface, #FFFFFF);
+          border: 1px solid var(--border, #E2E8F0);
+          border-radius: 10px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+        }
+        .dark .materials-pagination-bar {
+          background: #1E293B;
+          border-color: #334155;
+        }
+        .pagination-info-text {
+          font-size: 12.5px;
+          color: var(--text-secondary, #64748B);
+        }
+        .dark .pagination-info-text {
+          color: #94A3B8;
+        }
+
+        .pagination-controls-row {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .pagination-nav-btn {
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 750;
+          background: var(--bg, #F8FAFC);
+          border: 1px solid var(--border, #E2E8F0);
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .dark .pagination-nav-btn {
+          background: #0F172A;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+        .pagination-nav-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+        .pagination-nav-btn:not(:disabled):hover {
+          background: #2563EB;
+          color: #FFFFFF;
+          border-color: #2563EB;
+        }
+
+        .pagination-num-btn {
+          width: 32px;
+          height: 32px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 800;
+          background: transparent;
+          border: 1px solid var(--border, #E2E8F0);
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: all 0.15s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .dark .pagination-num-btn {
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+        .pagination-num-btn.active {
+          background: #2563EB !important;
+          color: #FFFFFF !important;
+          border-color: #1D4ED8 !important;
+        }
+        .pagination-ellipsis {
+          padding: 0 4px;
+          color: var(--text-secondary);
+        }
+
+        .pagination-page-size-wrap {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12.5px;
+          color: var(--text-secondary);
+        }
+        .page-size-select {
+          padding: 5px 8px;
+          border-radius: 6px;
+          border: 1px solid var(--border, #CBD5E1);
+          background: var(--bg, #F8FAFC);
+          color: var(--text-primary);
+          font-size: 12px;
+          font-weight: 700;
+          outline: none;
+        }
+        .dark .page-size-select {
+          background: #0F172A;
+          border-color: #334155;
+          color: #F8FAFC;
+        }
+
+        .table-loading-container,
+        .empty-materials-state {
+          text-align: center;
+          padding: 48px 0;
+          color: var(--text-secondary, #64748B);
+        }
+        .table-loading-spinner {
+          display: inline-block;
+          width: 32px;
+          height: 32px;
+          border: 3px solid rgba(37, 99, 235, 0.2);
+          border-top-color: #2563EB;
+          border-radius: 50%;
+          animation: spinLoading 0.8s linear infinite;
+          margin-bottom: 12px;
+        }
+        .empty-icon-box {
+          width: 56px;
+          height: 56px;
+          border-radius: 14px;
+          background: rgba(37, 99, 235, 0.1);
+          color: #2563EB;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto 12px auto;
+        }
+
+        @keyframes spinLoading {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
       `}</style>
     </div>

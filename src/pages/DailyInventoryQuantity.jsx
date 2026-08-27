@@ -253,27 +253,50 @@ export default function DailyInventoryQuantity() {
     // Draw border on first page
     drawPageBorder();
 
-    // --- Header Block (Pure Black & White) ---
-    doc.setTextColor(0, 0, 0);
-    setFont("bold", 14);
-    doc.text("DAILY INVENTORY SUMMARY REPORT", M + 15, y + 15);
+    // Left Side - Blank Circle with Number inside (Non-colorful Black & White)
+    const circleR = 12;
+    const circleX = M + 15 + circleR;
+    const circleY = y + 17;
 
-    setFont("normal", 9);
-    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+    // Draw Blank Circle with clean solid black border
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.4);
+    doc.circle(circleX, circleY, circleR, "FD");
+
+    // Round number written inside the circle
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 12);
+    doc.text("4", circleX, circleY + 4, { align: "center" });
+
+    // Numbering Label & Title
+    setFont("bold", 8);
+    doc.setTextColor(0, 0, 0);
+    doc.text("4TH REPORT", M + 45, y + 11);
+
+    setFont("bold", 13);
+    doc.setTextColor(0, 0, 0);
+    doc.text("DAILY INVENTORY QUANTITY-WISE REPORT", M + 45, y + 25);
+
+    setFont("normal", 8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 45, y + 36);
 
     // Right Side - Today's Attendance Block
+    doc.setTextColor(0, 0, 0);
     setFont("bold", 8);
     doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 230, y + 10);
     setFont("normal", 7.5);
+    doc.setTextColor(60, 60, 60);
     doc.text(attData.summary, PAGE_W - M - 230, y + 21);
     doc.text(attData.absenteesText, PAGE_W - M - 230, y + 31);
 
     // Header underline divider
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 39, PAGE_W - M, y + 39);
+    doc.line(M, y + 44, PAGE_W - M, y + 44);
 
-    y += 54;
+    y += 58;
 
     // --- Table Column Settings ---
     const headers = [
@@ -479,27 +502,50 @@ export default function DailyInventoryQuantity() {
     // Draw border on first page
     drawPageBorder();
 
-    // --- Header Block (Pure Black & White) ---
-    doc.setTextColor(0, 0, 0);
-    setFont("bold", 14);
-    doc.text("DAILY FABRIC RECEIVED ", M + 15, y + 15);
+    // Left Side - Blank Circle with Number inside (Non-colorful Black & White)
+    const circleR = 12;
+    const circleX = M + 15 + circleR;
+    const circleY = y + 17;
 
-    setFont("normal", 9);
-    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+    // Draw Blank Circle with clean solid black border
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.4);
+    doc.circle(circleX, circleY, circleR, "FD");
+
+    // Round number written inside the circle
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 12);
+    doc.text("4", circleX, circleY + 4, { align: "center" });
+
+    // Numbering Label & Title
+    setFont("bold", 8);
+    doc.setTextColor(0, 0, 0);
+    doc.text("4TH REPORT", M + 45, y + 11);
+
+    setFont("bold", 13);
+    doc.setTextColor(0, 0, 0);
+    doc.text("DAILY INVENTORY (ITEM-WISE SUMMARY)", M + 45, y + 25);
+
+    setFont("normal", 8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 45, y + 36);
 
     // Right Side - Today's Attendance Block
+    doc.setTextColor(0, 0, 0);
     setFont("bold", 8);
     doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 230, y + 10);
     setFont("normal", 7.5);
+    doc.setTextColor(60, 60, 60);
     doc.text(attData.summary, PAGE_W - M - 230, y + 21);
     doc.text(attData.absenteesText, PAGE_W - M - 230, y + 31);
 
     // Header underline divider
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 39, PAGE_W - M, y + 39);
+    doc.line(M, y + 44, PAGE_W - M, y + 44);
 
-    y += 54;
+    y += 58;
 
     // --- Summary Metrics Box Grid (Border box, no fills) ---
     doc.setFillColor(255, 255, 255);
@@ -708,7 +754,7 @@ export default function DailyInventoryQuantity() {
         }
       `}</style>
 
-      {/* HEADER SECTION */}
+      {/* HEADER SECTION WITH MD DAILY REPORT NUMBER */}
       <div style={{
         display: 'flex',
         flexWrap: 'wrap',
@@ -722,9 +768,42 @@ export default function DailyInventoryQuantity() {
         border: '1px solid var(--border)'
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>Daily Inventory Report (Quantity Wise)</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '3px 12px 3px 4px',
+              borderRadius: '20px',
+              border: '1.5px solid #0F172A',
+              background: '#FFFFFF',
+              color: '#0F172A'
+            }}>
+              <span style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                border: '1.5px solid #0F172A',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 900,
+                fontSize: '12px',
+                color: '#0F172A'
+              }}>
+                4
+              </span>
+              <span style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                4th Report
+              </span>
+            </div>
+            <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+              Inventory Control · 4th Report
+            </span>
+          </div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>Daily Inventory Report (Quantity Wise - 4th Report)</h2>
           <p style={{ margin: '4px 0 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
-            List of materials & dyeing fabric stock added to the inventory database on a specific date.
+            List of materials & dyeing fabric stock added to inventory on a specific date.
           </p>
         </div>
 

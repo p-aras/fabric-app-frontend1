@@ -410,30 +410,50 @@ export default function DailyFabricIssueReport() {
       doc.setFontSize(size);
     };
 
-    // Left Side - Header Title
-    setFont("bold", 14);
-    doc.setTextColor(15, 23, 42); // slate-900
-    doc.text("DAILY FABRIC ISSUANCE ANALYSIS", M, y + 15);
+    // Left Side - Blank Circle with Number inside (Non-colorful Black & White)
+    const circleR = 12;
+    const circleX = M + circleR;
+    const circleY = y + 17;
 
-    setFont("normal", 8.5);
-    doc.setTextColor(100, 116, 139); // slate-500
-    doc.text(`Period: ${startDate} to ${endDate}  |  Generated: ${new Date().toLocaleDateString()}`, M, y + 28);
+    // Draw Blank Circle with solid black stroke
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.4);
+    doc.circle(circleX, circleY, circleR, "FD");
+
+    // Round number written inside the circle
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 12);
+    doc.text("1", circleX, circleY + 4, { align: "center" });
+
+    // Numbering Label & Title
+    setFont("bold", 8);
+    doc.setTextColor(0, 0, 0);
+    doc.text("1ST REPORT", M + 30, y + 11);
+
+    setFont("bold", 13);
+    doc.setTextColor(0, 0, 0);
+    doc.text("DAILY FABRIC ISSUANCE ANALYSIS", M + 30, y + 25);
+
+    setFont("normal", 8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Period: ${startDate} to ${endDate}  |  Generated: ${new Date().toLocaleDateString()}`, M + 30, y + 36);
 
     // Right Side - Today's Attendance Block
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(0, 0, 0);
     setFont("bold", 8);
     doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 230, y + 10);
     setFont("normal", 7.5);
-    doc.setTextColor(71, 85, 105);
+    doc.setTextColor(60, 60, 60);
     doc.text(attData.summary, PAGE_W - M - 230, y + 21);
     doc.text(attData.absenteesText, PAGE_W - M - 230, y + 31);
 
     // Divider Line
-    doc.setDrawColor(15, 23, 42);
+    doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 39, PAGE_W - M, y + 39);
+    doc.line(M, y + 44, PAGE_W - M, y + 44);
 
-    y += 54;
+    y += 58;
 
     // Grayscale Summary Box
     doc.setDrawColor(226, 232, 240); // slate-200
@@ -628,9 +648,14 @@ export default function DailyFabricIssueReport() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 }}>
-      {/* Styles Injection for clean White & Royal Blue theme, glassmorphic filters, animations and glow */}
+    <div className="daily-fabric-issue-app" style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 30 }}>
+      {/* Styles Injection for clean White & Royal Blue theme with Full Dark Mode Support */}
       <style>{`
+        .daily-fabric-issue-app {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          color: var(--text-primary, #0F172A);
+        }
+
         .gradient-title {
           background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
           -webkit-background-clip: text;
@@ -638,19 +663,47 @@ export default function DailyFabricIssueReport() {
           font-weight: 900;
           letter-spacing: -0.8px;
         }
-        
-        .premium-card {
-          background: #ffffff !important;
-          border: 1px solid rgba(37, 99, 235, 0.12) !important;
-          box-shadow: 0 4px 20px -2px rgba(37, 99, 235, 0.04) !important;
-          border-radius: 12px !important;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .dark .gradient-title {
+          background: linear-gradient(135deg, #60a5fa 0%, #93c5fd 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
         }
         
-        .premium-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 28px -5px rgba(37, 99, 235, 0.1) !important;
-          border-color: rgba(37, 99, 235, 0.25) !important;
+        .premium-card {
+          background: var(--surface, #ffffff) !important;
+          border: 1px solid var(--border, rgba(37, 99, 235, 0.12)) !important;
+          box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.04) !important;
+          border-radius: 10px !important;
+          transition: all 0.25s ease;
+        }
+        .dark .premium-card {
+          background: #1E293B !important;
+          border-color: #334155 !important;
+          box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.2) !important;
+        }
+
+        .card-header-styled {
+          padding: 12px 18px !important;
+          border-bottom: 1.5px solid var(--border, #E2E8F0) !important;
+          background: var(--bg, #F8FAFC) !important;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .dark .card-header-styled {
+          background: #0F172A !important;
+          border-color: #334155 !important;
+        }
+
+        .header-title-text {
+          font-size: 12.5px;
+          font-weight: 850;
+          color: var(--text-primary, #0F172A);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .dark .header-title-text {
+          color: #F8FAFC !important;
         }
 
         .kpi-card-glow {
@@ -665,22 +718,41 @@ export default function DailyFabricIssueReport() {
         }
         
         .kpi-purple::before { background: #2563eb; }
-        .kpi-emerald::before { background: #3b82f6; }
-        .kpi-amber::before { background: #1d4ed8; }
+        .kpi-emerald::before { background: #10b981; }
+        .kpi-amber::before { background: #f59e0b; }
         .kpi-sky::before { background: #60a5fa; }
+
+        .kpi-label-text {
+          font-size: 10px;
+          color: #64748B;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+        }
+        .dark .kpi-label-text { color: #94A3B8 !important; }
+
+        .kpi-value-text {
+          font-size: 24px;
+          font-weight: 900;
+          color: #0F172A;
+          margin-top: 2px;
+          letter-spacing: -0.5px;
+        }
+        .dark .kpi-value-text { color: #F8FAFC !important; }
 
         .glow-icon-box {
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 44px;
-          height: 44px;
-          border-radius: 12px;
-          transition: transform 0.4s ease;
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          background: rgba(37, 99, 235, 0.08);
+          color: #2563eb;
         }
-
-        .premium-card:hover .glow-icon-box {
-          transform: scale(1.1) rotate(4deg);
+        .dark .glow-icon-box {
+          background: rgba(59, 130, 246, 0.15) !important;
+          color: #60A5FA !important;
         }
 
         .custom-gradient-progress {
@@ -689,216 +761,264 @@ export default function DailyFabricIssueReport() {
 
         .lot-pill {
           font-size: 9.5px;
-          padding: 3px 8px;
-          border-radius: 6px;
+          padding: 2px 7px;
+          border-radius: 5px;
           font-weight: 750;
           letter-spacing: 0.2px;
-          transition: all 0.2s ease;
-          cursor: default;
+          background: #DBEAFE;
+          color: #1E40AF;
+          border: 1px solid #93C5FD;
         }
-
-        .lot-pill:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 8px rgba(37, 99, 235, 0.12);
+        .dark .lot-pill {
+          background: #1E3A8A !important;
+          color: #BFDBFE !important;
+          border-color: #3B82F6 !important;
         }
 
         /* High Visibility Solid Borders for Tables */
         .custom-table-bordered {
           border-collapse: collapse !important;
           width: 100% !important;
-          border: 2px solid #94a3b8 !important;
+          border: 1px solid #CBD5E1 !important;
+        }
+        .dark .custom-table-bordered {
+          border-color: #334155 !important;
         }
 
         .custom-table-bordered th {
-          background: #e2e8f0 !important;
-          color: #0f172a !important;
+          background: #F1F5F9 !important;
+          color: #1E293B !important;
           font-weight: 850 !important;
-          border: 1px solid #94a3b8 !important;
-          padding: 12px 14px !important;
+          border: 1px solid #CBD5E1 !important;
+          padding: 8px 12px !important;
           font-size: 11px !important;
+          text-transform: uppercase;
+        }
+        .dark .custom-table-bordered th {
+          background: #0F172A !important;
+          color: #F8FAFC !important;
+          border-color: #334155 !important;
         }
 
         .custom-table-bordered td {
-          color: #0f172a !important;
+          color: #1E293B !important;
           font-weight: 600 !important;
-          border: 1px solid #94a3b8 !important;
-          padding: 12px 14px !important;
-          background: #ffffff !important;
+          border: 1px solid #E2E8F0 !important;
+          padding: 8px 12px !important;
+          background: #FFFFFF !important;
+          font-size: 11.5px !important;
+        }
+        .dark .custom-table-bordered td {
+          color: #F8FAFC !important;
+          border-color: #334155 !important;
+          background: #1E293B !important;
         }
 
         .custom-table-bordered tr:nth-child(even) td {
-          background: #f8fafc !important;
+          background: #F8FAFC !important;
+        }
+        .dark .custom-table-bordered tr:nth-child(even) td {
+          background: #0F172A !important;
         }
 
         .custom-table-bordered tr:hover td {
-          background: rgba(37, 99, 235, 0.05) !important;
+          background: rgba(37, 99, 235, 0.06) !important;
+        }
+        .dark .custom-table-bordered tr:hover td {
+          background: rgba(59, 130, 246, 0.15) !important;
         }
 
         .modern-select-input {
-          border-radius: 8px !important;
-          border: 1.5px solid #94a3b8 !important;
-          background: #ffffff !important;
-          color: #0f172a !important;
+          border-radius: 6px !important;
+          border: 1.5px solid var(--border, #CBD5E1) !important;
+          background: var(--surface, #FFFFFF) !important;
+          color: var(--text-primary, #0F172A) !important;
           font-weight: 600 !important;
-          transition: all 0.2s ease;
-          padding: 8px 12px !important;
+          padding: 6px 10px !important;
+          font-size: 12px !important;
+          outline: none;
         }
-
+        .dark .modern-select-input {
+          background: #0F172A !important;
+          border-color: #334155 !important;
+          color: #F8FAFC !important;
+        }
         .modern-select-input:focus {
-          border-color: #2563eb !important;
-          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+          border-color: #2563EB !important;
         }
 
-        @keyframes progress-pulsate {
-          0% { opacity: 0.95; }
-          50% { opacity: 1; }
-          100% { opacity: 0.95; }
+        .filter-label-text {
+          font-size: 10.5px;
+          font-weight: 800;
+          color: #475569;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
         }
+        .dark .filter-label-text {
+          color: #94A3B8 !important;
+        }
+
+        .btn-preset-filter {
+          height: 32px;
+          padding: 0 10px;
+          border-radius: 6px;
+          font-size: 11.5px;
+          font-weight: 700;
+          cursor: pointer;
+          border: 1px solid #CBD5E1;
+          background: #F1F5F9;
+          color: #334155;
+          transition: all 0.2s;
+        }
+        .btn-preset-filter:hover { background: #E2E8F0; }
+        .btn-preset-filter.active-preset {
+          background: #2563EB !important;
+          color: #FFFFFF !important;
+          border-color: #1D4ED8 !important;
+        }
+        .dark .btn-preset-filter {
+          background: #334155;
+          border-color: #475569;
+          color: #E2E8F0;
+        }
+        .dark .btn-preset-filter:hover { background: #475569; }
       `}</style>
 
-      {/* Header Panel */}
+      {/* Header Panel with MD Daily Report Number Badge */}
       <div className="page-header" style={{ marginBottom: 0 }}>
         <div className="page-title-block">
-          <div className="breadcrumb" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#0f172a', fontWeight: 700 }}>
-            <span>Home</span><span>/</span><span>Reports</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '3px 12px 3px 4px',
+              borderRadius: '20px',
+              border: '1.5px solid #0F172A',
+              background: '#FFFFFF',
+              color: '#0F172A'
+            }}>
+              <span style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                border: '1.5px solid #0F172A',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 900,
+                fontSize: '12px',
+                color: '#0F172A'
+              }}>
+                1
+              </span>
+              <span style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                1st Report
+              </span>
+            </div>
+            <div className="breadcrumb" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}>
+              <span>Home</span><span>/</span><span>Reports</span><span>/</span><span style={{ color: '#0F172A', fontWeight: 800 }}>1st Report</span>
+            </div>
           </div>
-          <h1 className="gradient-title" style={{ fontSize: '28px', marginTop: '6px' }}>Daily Fabric Issue Analytics</h1>
-          <p style={{ color: '#0f172a', fontSize: '14px', marginTop: '4px', fontWeight: 650 }}>
-            Visual distribution matrix mapping overall volume and weights across tables & fabric styles.
+          <h1 style={{ fontSize: '24px', marginTop: '2px', color: '#0F172A', fontWeight: 900, letterSpacing: '-0.5px' }}>
+            Daily Fabric Issue Analytics (1st Report)
+          </h1>
+          <p className="page-sub" style={{ fontSize: '12.5px', marginTop: '2px', color: '#64748B' }}>
+            Table-wise fabric rolls, meterage and weight issuance log.
           </p>
         </div>
-        <div className="page-actions" style={{ display: 'flex', gap: 12 }}>
-          <button className="btn btn-secondary btn-sm" onClick={exportToExcel} disabled={loading || filteredData.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, borderRadius: 10, border: '2px solid #2563eb', color: '#2563eb', fontWeight: 750, background: '#ffffff' }}>
-            <Download size={14} /> Export Excel
+        <div className="page-actions" style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={exportToExcel} disabled={loading || filteredData.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, borderRadius: 8, fontWeight: 750 }}>
+            <Download size={13} /> Export Excel
           </button>
-          <button className="btn btn-primary btn-sm" onClick={exportToPdf} disabled={loading || filteredData.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, borderRadius: 10, background: '#2563eb', border: '1px solid #2563eb', boxShadow: '0 4px 14px rgba(37, 99, 235, 0.2)', fontWeight: 750 }}>
-            <FileText size={14} /> Export PDF
+          <button className="btn btn-primary btn-sm" onClick={exportToPdf} disabled={loading || filteredData.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 34, borderRadius: 8, fontWeight: 750 }}>
+            <FileText size={13} /> Export PDF
           </button>
         </div>
       </div>
 
-      {/* Glassmorphic Filter Card */}
-      <div className="card premium-card" style={{ background: 'rgba(255, 255, 255, 0.95)' }}>
-        <div className="card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', padding: '18px 20px' }}>
-          
+      {/* Filter Card */}
+      <div className="card premium-card">
+        <div className="card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', padding: '12px 16px' }}>
+
           {/* Start Date */}
-          <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 11, fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Start Date</label>
+          <div style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label className="filter-label-text">Start Date</label>
             <div style={{ position: 'relative' }}>
               <input
                 type="date"
                 className="input modern-select-input"
-                style={{ width: '100%', paddingLeft: 34 }}
+                style={{ width: '100%', paddingLeft: 30 }}
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
               />
-              <Calendar size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#2563eb' }} />
+              <Calendar size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#2563eb' }} />
             </div>
           </div>
 
           {/* End Date */}
-          <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 11, fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.8px' }}>End Date</label>
+          <div style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label className="filter-label-text">End Date</label>
             <div style={{ position: 'relative' }}>
               <input
                 type="date"
                 className="input modern-select-input"
-                style={{ width: '100%', paddingLeft: 34 }}
+                style={{ width: '100%', paddingLeft: 30 }}
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
               />
-              <Calendar size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#2563eb' }} />
+              <Calendar size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#2563eb' }} />
             </div>
           </div>
 
           {/* Text Search */}
-          <div style={{ flex: '2 1 300px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 11, fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Search Filter</label>
+          <div style={{ flex: '2 1 240px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label className="filter-label-text">Search Filter</label>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
                 className="input modern-select-input"
-                placeholder="Search summaries by lot, shade, fabric name..."
-                style={{ width: '100%', paddingLeft: 36 }}
+                placeholder="Search by lot, shade, fabric name..."
+                style={{ width: '100%', paddingLeft: 30 }}
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
-              <Search size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#0f172a' }} />
+              <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
             </div>
           </div>
 
           {/* Refresh & Quick Presets */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <button
-              className="btn"
+              type="button"
+              className={`btn-preset-filter ${startDate === new Date().toISOString().slice(0, 10) && endDate === new Date().toISOString().slice(0, 10) ? 'active-preset' : ''}`}
               onClick={() => setDatePreset('today')}
-              style={{
-                height: 38,
-                padding: '0 12px',
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                backgroundColor: startDate === new Date().toISOString().slice(0, 10) && endDate === new Date().toISOString().slice(0, 10) ? '#2563eb' : '#f1f5f9',
-                color: startDate === new Date().toISOString().slice(0, 10) && endDate === new Date().toISOString().slice(0, 10) ? '#ffffff' : '#334155',
-                border: '1px solid #cbd5e1',
-                cursor: 'pointer'
-              }}
             >
               ⚡ Today
             </button>
             <button
-              className="btn"
+              type="button"
+              className="btn-preset-filter"
               onClick={() => setDatePreset('7days')}
-              style={{
-                height: 38,
-                padding: '0 12px',
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                backgroundColor: '#f1f5f9',
-                color: '#334155',
-                border: '1px solid #cbd5e1',
-                cursor: 'pointer'
-              }}
             >
               7 Days
             </button>
             <button
-              className="btn"
+              type="button"
+              className="btn-preset-filter"
               onClick={() => setDatePreset('30days')}
-              style={{
-                height: 38,
-                padding: '0 12px',
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                backgroundColor: '#f1f5f9',
-                color: '#334155',
-                border: '1px solid #cbd5e1',
-                cursor: 'pointer'
-              }}
             >
               30 Days
             </button>
             <button
-              className="btn"
+              type="button"
+              className={`btn-preset-filter ${!startDate && !endDate ? 'active-preset' : ''}`}
               onClick={() => setDatePreset('all')}
-              style={{
-                height: 38,
-                padding: '0 12px',
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                backgroundColor: !startDate && !endDate ? '#2563eb' : '#f1f5f9',
-                color: !startDate && !endDate ? '#ffffff' : '#334155',
-                border: '1px solid #cbd5e1',
-                cursor: 'pointer'
-              }}
             >
               ♾️ All Time
             </button>
-            <button className="btn btn-primary" onClick={fetchReport} disabled={loading} style={{ height: 38, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, background: '#2563eb', color: '#ffffff', fontWeight: 700, border: 'none' }}>
-              <RefreshCw size={14} className={loading ? 'spin-animation' : ''} />
+            <button className="btn btn-primary" onClick={fetchReport} disabled={loading} style={{ height: 32, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 6, borderRadius: 6, fontWeight: 700, fontSize: 11.5 }}>
+              <RefreshCw size={12} className={loading ? 'spin-animation' : ''} />
               {loading ? "Syncing..." : "Refresh"}
             </button>
           </div>
@@ -907,30 +1027,30 @@ export default function DailyFabricIssueReport() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-4" style={{ gap: 20 }}>
+      <div className="grid grid-4" style={{ gap: 12 }}>
         {/* KPI 1 */}
         <div className="card premium-card kpi-card-glow kpi-purple">
-          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px' }}>
-            <div className="glow-icon-box" style={{ background: 'rgba(37, 99, 235, 0.08)', color: '#2563eb' }}>
-              <Scissors size={22} />
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+            <div className="glow-icon-box">
+              <Scissors size={18} />
             </div>
             <div>
-              <div style={{ fontSize: 10, color: '#0f172a', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Issued Rolls</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', marginTop: 2, letterSpacing: '-0.5px' }}>{stats.totalRolls}</div>
+              <div className="kpi-label-text">Issued Rolls</div>
+              <div className="kpi-value-text">{stats.totalRolls}</div>
             </div>
           </div>
         </div>
 
         {/* KPI 2 */}
         <div className="card premium-card kpi-card-glow kpi-emerald">
-          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px' }}>
-            <div className="glow-icon-box" style={{ background: 'rgba(37, 99, 235, 0.08)', color: '#2563eb' }}>
-              <Scale size={22} />
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+            <div className="glow-icon-box">
+              <Scale size={18} />
             </div>
             <div>
-              <div style={{ fontSize: 10, color: '#0f172a', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Total Weight</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', marginTop: 2, letterSpacing: '-0.5px' }}>
-                {stats.totalWeight.toFixed(1)} <span style={{ fontSize: 13, fontWeight: 650, color: '#0f172a' }}>KG</span>
+              <div className="kpi-label-text">Total Weight</div>
+              <div className="kpi-value-text">
+                {stats.totalWeight.toFixed(1)} <span style={{ fontSize: 12, fontWeight: 650 }}>KG</span>
               </div>
             </div>
           </div>
@@ -938,104 +1058,104 @@ export default function DailyFabricIssueReport() {
 
         {/* KPI 3 */}
         <div className="card premium-card kpi-card-glow kpi-amber">
-          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px' }}>
-            <div className="glow-icon-box" style={{ background: 'rgba(37, 99, 235, 0.08)', color: '#2563eb' }}>
-              <Layers size={22} />
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+            <div className="glow-icon-box">
+              <Layers size={18} />
             </div>
             <div>
-              <div style={{ fontSize: 10, color: '#0f172a', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Unique Lots</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', marginTop: 2, letterSpacing: '-0.5px' }}>{stats.uniqueLots.size}</div>
+              <div className="kpi-label-text">Unique Lots</div>
+              <div className="kpi-value-text">{stats.uniqueLots.size}</div>
             </div>
           </div>
         </div>
 
         {/* KPI 4 */}
         <div className="card premium-card kpi-card-glow kpi-sky">
-          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px' }}>
-            <div className="glow-icon-box" style={{ background: 'rgba(37, 99, 235, 0.08)', color: '#2563eb' }}>
-              <Tag size={22} />
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+            <div className="glow-icon-box">
+              <Tag size={18} />
             </div>
             <div>
-              <div style={{ fontSize: 10, color: '#0f172a', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Cutting Tables</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', marginTop: 2, letterSpacing: '-0.5px' }}>{stats.activeTables.size}</div>
+              <div className="kpi-label-text">Cutting Tables</div>
+              <div className="kpi-value-text">{stats.activeTables.size}</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Modern High-Quality Chart 1: Daily Issuance Trend (Area Chart) */}
+      {/* Issuance Volume & Weight Trend Chart */}
       {filteredData.length > 0 && (
         <div className="card premium-card" style={{ overflow: 'hidden' }}>
-          <div className="card-header" style={{ padding: '16px 20px', borderBottom: '2px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 4, height: 14, background: '#2563eb', borderRadius: 2 }} />
-              <div style={{ fontSize: '13px', fontWeight: 850, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Issuance Volume & Weight Trend</div>
+          <div className="card-header card-header-styled">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 3, height: 12, background: '#2563eb', borderRadius: 2 }} />
+              <div className="header-title-text">Issuance Volume & Weight Trend</div>
             </div>
             <span style={{ fontSize: '11px', color: '#2563eb', fontWeight: 800 }}>Daily Performance Curve</span>
           </div>
-          <div className="card-body" style={{ padding: '24px 20px 10px 10px' }}>
-             <ResponsiveContainer width="100%" height={280}>
+          <div className="card-body" style={{ padding: '16px 14px 6px 6px' }}>
+            <ResponsiveContainer width="100%" height={240}>
               <ComposedChart data={trendChartData}>
                 <defs>
                   <linearGradient id="weightTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.24}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.24} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
                   </linearGradient>
                   <linearGradient id="rollsTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.08}/>
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0}/>
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.08} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis 
-                  dataKey="formattedDate" 
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                <XAxis
+                  dataKey="formattedDate"
                   tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
                   axisLine={{ stroke: '#cbd5e1' }}
-                  tickLine={{ stroke: '#cbd5e1' }}
+                  tickLine={false}
                 />
-                <YAxis 
-                  yAxisId="left" 
+                <YAxis
+                  yAxisId="left"
                   tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
                   axisLine={false}
                   tickLine={false}
-                  label={{ value: 'Rolls Issued', angle: -90, position: 'insideLeft', offset: 0, fill: '#2563eb', fontSize: 11, fontWeight: 700 }} 
+                  label={{ value: 'Rolls', angle: -90, position: 'insideLeft', offset: 0, fill: '#2563eb', fontSize: 10, fontWeight: 700 }}
                 />
-                <YAxis 
-                  yAxisId="right" 
-                  orientation="right" 
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
                   tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
                   axisLine={false}
                   tickLine={false}
-                  label={{ value: 'Weight (KG)', angle: 90, position: 'insideRight', offset: 0, fill: '#10b981', fontSize: 11, fontWeight: 700 }} 
+                  label={{ value: 'KG', angle: 90, position: 'insideRight', offset: 0, fill: '#10b981', fontSize: 10, fontWeight: 700 }}
                 />
-                <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(37, 99, 235, 0.08)', strokeWidth: 2 }} />
-                <Legend 
-                  verticalAlign="top" 
-                  height={40} 
+                <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(37, 99, 235, 0.1)', strokeWidth: 1.5 }} />
+                <Legend
+                  verticalAlign="top"
+                  height={32}
                   iconType="circle"
                   iconSize={8}
-                  wrapperStyle={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', paddingBottom: '10px' }} 
+                  wrapperStyle={{ fontSize: '11px', fontWeight: 700, paddingBottom: '6px' }}
                 />
-                <Area 
-                  yAxisId="right" 
-                  type="monotone" 
-                  dataKey="weight" 
-                  name="Weight (KG)" 
-                  fill="url(#weightTrendGrad)" 
-                  stroke="#10b981" 
+                <Area
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="weight"
+                  name="Weight (KG)"
+                  fill="url(#weightTrendGrad)"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  dot={{ r: 2.5, fill: '#10b981', strokeWidth: 0 }}
+                  activeDot={{ r: 4, stroke: '#10b981', strokeWidth: 1.5, fill: '#ffffff' }}
+                />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="rolls"
+                  name="Rolls Issued"
+                  stroke="#2563eb"
                   strokeWidth={2.5}
-                  dot={{ r: 3, fill: '#10b981', strokeWidth: 0 }} 
-                  activeDot={{ r: 5, stroke: '#10b981', strokeWidth: 1.5, fill: '#ffffff' }} 
-                />
-                <Line 
-                  yAxisId="left" 
-                  type="monotone" 
-                  dataKey="rolls" 
-                  name="Rolls Issued" 
-                  stroke="#2563eb" 
-                  strokeWidth={3} 
-                  dot={{ r: 4, stroke: '#2563eb', strokeWidth: 2, fill: '#ffffff' }} 
-                  activeDot={{ r: 6, stroke: '#2563eb', strokeWidth: 2.5, fill: '#ffffff' }} 
+                  dot={{ r: 3, stroke: '#2563eb', strokeWidth: 1.5, fill: '#ffffff' }}
+                  activeDot={{ r: 5, stroke: '#2563eb', strokeWidth: 2, fill: '#ffffff' }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -1044,19 +1164,21 @@ export default function DailyFabricIssueReport() {
       )}
 
       {/* Main Aggregated Summaries (Dual Cards side-by-side with proper borders) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 24 }}>
-        
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 14 }}>
+
         {/* Table-wise Summary Card */}
         <div className="card premium-card" style={{ overflow: 'hidden', padding: 0 }}>
-          <div className="card-header" style={{ padding: '16px 20px', borderBottom: '2px solid #cbd5e1', background: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 4, height: 14, background: '#2563eb', borderRadius: 2 }} />
-            <div style={{ fontSize: '13px', fontWeight: 850, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Table-wise Summary</div>
+          <div className="card-header card-header-styled">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 3, height: 12, background: '#2563eb', borderRadius: 2 }} />
+              <div className="header-title-text">Table-wise Summary</div>
+            </div>
           </div>
-          <div className="card-body" style={{ padding: 16 }}>
+          <div className="card-body" style={{ padding: 10 }}>
             {loading ? (
-              <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
+              <div style={{ padding: 30, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
             ) : tableSummary.length === 0 ? (
-              <div style={{ padding: 30, textAlign: 'center', color: '#0f172a', fontSize: 13 }}>No records found.</div>
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>No records found.</div>
             ) : (
               <div className="table-wrap" style={{ border: 'none' }}>
                 <table className="custom-table-bordered">
@@ -1073,27 +1195,27 @@ export default function DailyFabricIssueReport() {
                     {tableSummary.map(item => (
                       <tr key={item.name}>
                         <td style={{ fontWeight: 800 }}>
-                          <span style={{ fontSize: '12px', color: '#1e3a8a' }}>
+                          <span style={{ fontSize: '11.5px', color: '#2563eb' }}>
                             {item.name}
                           </span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: '170px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, maxWidth: '170px' }}>
                             {Array.from(item.lots).sort().map(lot => (
-                              <span key={lot} className="lot-pill" style={{ background: '#dbeafe', color: '#1e40af', border: '1.5px solid #3b82f6' }}>
+                              <span key={lot} className="lot-pill">
                                 {lot}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td style={{ fontWeight: 900, textAlign: 'right', fontSize: '13px' }}>{item.rolls}</td>
-                        <td style={{ fontWeight: 900, textAlign: 'right', fontSize: '13px', color: '#10b981' }}>{item.weight.toFixed(1)}</td>
-                        <td style={{ width: '100px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-                            <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                        <td style={{ fontWeight: 800, textAlign: 'right', fontSize: '12px' }}>{item.rolls}</td>
+                        <td style={{ fontWeight: 800, textAlign: 'right', fontSize: '12px', color: '#10b981' }}>{item.weight.toFixed(1)}</td>
+                        <td style={{ width: '80px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                            <div style={{ flex: 1, height: 5, background: 'rgba(148, 163, 184, 0.2)', borderRadius: 3, overflow: 'hidden' }}>
                               <div className="custom-gradient-progress" style={{ width: `${item.percentage}%`, height: '100%', borderRadius: 3 }} />
                             </div>
-                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#2563eb' }}>{item.percentage}%</span>
+                            <span style={{ fontSize: '10px', fontWeight: 800, color: '#2563eb' }}>{item.percentage}%</span>
                           </div>
                         </td>
                       </tr>
@@ -1107,15 +1229,17 @@ export default function DailyFabricIssueReport() {
 
         {/* Fabric-wise Summary Card */}
         <div className="card premium-card" style={{ overflow: 'hidden', padding: 0 }}>
-          <div className="card-header" style={{ padding: '16px 20px', borderBottom: '2px solid #cbd5e1', background: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 4, height: 14, background: '#2563eb', borderRadius: 2 }} />
-            <div style={{ fontSize: '13px', fontWeight: 850, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Fabric-wise Summary</div>
+          <div className="card-header card-header-styled">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 3, height: 12, background: '#2563eb', borderRadius: 2 }} />
+              <div className="header-title-text">Fabric-wise Summary</div>
+            </div>
           </div>
-          <div className="card-body" style={{ padding: 16 }}>
+          <div className="card-body" style={{ padding: 10 }}>
             {loading ? (
-              <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
+              <div style={{ padding: 30, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
             ) : fabricSummary.length === 0 ? (
-              <div style={{ padding: 30, textAlign: 'center', color: '#0f172a', fontSize: 13 }}>No fabric records found.</div>
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>No fabric records found.</div>
             ) : (
               <div className="table-wrap" style={{ border: 'none' }}>
                 <table className="custom-table-bordered">
@@ -1131,26 +1255,26 @@ export default function DailyFabricIssueReport() {
                   <tbody>
                     {fabricSummary.map(item => (
                       <tr key={item.name}>
-                        <td style={{ fontWeight: 850, maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.name}>
+                        <td style={{ fontWeight: 800, maxWidth: '140px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.name}>
                           {item.name}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: '170px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, maxWidth: '170px' }}>
                             {Array.from(item.lots).sort().map(lot => (
-                              <span key={lot} className="lot-pill" style={{ background: '#dbeafe', color: '#1e40af', border: '1.5px solid #3b82f6' }}>
+                              <span key={lot} className="lot-pill">
                                 {lot}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td style={{ fontWeight: 900, textAlign: 'right', fontSize: '13px' }}>{item.rolls}</td>
-                        <td style={{ fontWeight: 900, textAlign: 'right', fontSize: '13px', color: '#10b981' }}>{item.weight.toFixed(1)}</td>
-                        <td style={{ width: '100px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-                            <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                        <td style={{ fontWeight: 800, textAlign: 'right', fontSize: '12px' }}>{item.rolls}</td>
+                        <td style={{ fontWeight: 800, textAlign: 'right', fontSize: '12px', color: '#10b981' }}>{item.weight.toFixed(1)}</td>
+                        <td style={{ width: '80px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                            <div style={{ flex: 1, height: 5, background: 'rgba(148, 163, 184, 0.2)', borderRadius: 3, overflow: 'hidden' }}>
                               <div className="custom-gradient-progress" style={{ width: `${item.percentage}%`, height: '100%', borderRadius: 3 }} />
                             </div>
-                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#2563eb' }}>{item.percentage}%</span>
+                            <span style={{ fontSize: '10px', fontWeight: 800, color: '#2563eb' }}>{item.percentage}%</span>
                           </div>
                         </td>
                       </tr>
@@ -1166,85 +1290,85 @@ export default function DailyFabricIssueReport() {
 
       {/* Sub-Charts Section: Table ComposedChart + Fabric Doughnut Chart */}
       {filteredData.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 24 }}>
-          
-          {/* Chart 2: Table-wise Composed Chart (Vibrant Bars + curved Line overlay) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 14 }}>
+
+          {/* Chart 2: Table-wise Composed Chart */}
           <div className="card premium-card" style={{ overflow: 'hidden' }}>
-            <div className="card-header" style={{ padding: '16px 20px', borderBottom: '2px solid #e2e8f0', background: '#f8fafc' }}>
-              <div className="card-title" style={{ fontSize: '13px', fontWeight: 850, textTransform: 'uppercase', color: '#0f172a', letterSpacing: '0.5px' }}>Table Performance (Rolls & Weights)</div>
+            <div className="card-header card-header-styled">
+              <div className="header-title-text">Table Performance (Rolls & Weights)</div>
             </div>
-            <div className="card-body" style={{ padding: '20px 10px 10px 10px' }}>
-              <ResponsiveContainer width="100%" height={230}>
+            <div className="card-body" style={{ padding: '14px 8px 6px 6px' }}>
+              <ResponsiveContainer width="100%" height={210}>
                 <ComposedChart data={tableChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis 
-                    dataKey="name" 
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                  <XAxis
+                    dataKey="name"
                     tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
                     axisLine={{ stroke: '#cbd5e1' }}
-                    tickLine={{ stroke: '#cbd5e1' }}
+                    tickLine={false}
                   />
-                  <YAxis 
-                    yAxisId="left" 
+                  <YAxis
+                    yAxisId="left"
                     tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right" 
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
                     tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(37, 99, 235, 0.02)' }} />
-                  <Legend 
-                    verticalAlign="top" 
-                    height={36} 
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(37, 99, 235, 0.04)' }} />
+                  <Legend
+                    verticalAlign="top"
+                    height={30}
                     iconType="circle"
                     iconSize={8}
-                    wrapperStyle={{ fontSize: '11px', fontWeight: 700, color: '#1e293b' }} 
+                    wrapperStyle={{ fontSize: '10.5px', fontWeight: 700 }}
                   />
-                  <Bar yAxisId="left" dataKey="rolls" name="Rolls Issued" radius={[6, 6, 0, 0]} maxBarSize={28}>
+                  <Bar yAxisId="left" dataKey="rolls" name="Rolls Issued" radius={[4, 4, 0, 0]} maxBarSize={24}>
                     {tableChartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Bar>
-                  <Line 
-                    yAxisId="right" 
-                    type="monotone" 
-                    dataKey="weight" 
-                    name="Weight (KG)" 
-                    stroke="#e11d48" 
-                    strokeWidth={3} 
-                    dot={{ r: 4, stroke: '#e11d48', strokeWidth: 2, fill: '#ffffff' }}
-                    activeDot={{ r: 6, stroke: '#e11d48', strokeWidth: 2.5, fill: '#ffffff' }} 
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="weight"
+                    name="Weight (KG)"
+                    stroke="#e11d48"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, stroke: '#e11d48', strokeWidth: 1.5, fill: '#ffffff' }}
+                    activeDot={{ r: 5, stroke: '#e11d48', strokeWidth: 2, fill: '#ffffff' }}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Chart 3: Fabric-wise Doughnut (Pie) Chart (Colorful Slices) */}
+          {/* Chart 3: Fabric-wise Doughnut (Pie) Chart */}
           <div className="card premium-card" style={{ overflow: 'hidden' }}>
-            <div className="card-header" style={{ padding: '16px 20px', borderBottom: '2px solid #e2e8f0', background: '#f8fafc' }}>
-              <div className="card-title" style={{ fontSize: '13px', fontWeight: 850, textTransform: 'uppercase', color: '#0f172a', letterSpacing: '0.5px' }}>Fabric Share Ratio</div>
+            <div className="card-header card-header-styled">
+              <div className="header-title-text">Fabric Share Ratio</div>
             </div>
             <div className="card-body" style={{ padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ flex: 1.2, height: 230 }}>
+              <div style={{ flex: 1.2, height: 210 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={fabricChartData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
+                      innerRadius={45}
+                      outerRadius={75}
                       paddingAngle={4}
                       dataKey="value"
                       nameKey="name"
                     >
                       {fabricChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} stroke="#ffffff" strokeWidth={1.5} />
+                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} stroke="rgba(255,255,255,0.2)" strokeWidth={1} />
                       ))}
                     </Pie>
                     <Tooltip content={<CustomTooltip />} />
@@ -1252,14 +1376,14 @@ export default function DailyFabricIssueReport() {
                 </ResponsiveContainer>
               </div>
               {/* Custom aligned side legend */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 12 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 8 }}>
                 {fabricChartData.map((entry, idx) => (
-                  <div key={entry.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '11px', fontWeight: 700 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: CHART_COLORS[idx % CHART_COLORS.length], flexShrink: 0 }} />
-                    <span style={{ color: '#0f172a', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '120px' }} title={entry.name}>
+                  <div key={entry.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '10.5px', fontWeight: 700 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: CHART_COLORS[idx % CHART_COLORS.length], flexShrink: 0 }} />
+                    <span style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '110px' }} title={entry.name}>
                       {entry.name}
                     </span>
-                    <span style={{ color: '#475569', marginLeft: 'auto' }}>({entry.value})</span>
+                    <span style={{ color: 'var(--text-secondary)', marginLeft: 'auto' }}>({entry.value})</span>
                   </div>
                 ))}
               </div>

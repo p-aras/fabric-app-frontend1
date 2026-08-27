@@ -12,18 +12,57 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
   max-width: 100%;
-  margin: 0 auto;
+  margin: 0;
+  padding: 0 0 32px 0;
   animation: pageFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-back-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border, #CBD5E1);
+  background: var(--surface, #FFFFFF);
+  color: var(--text-primary, #0F172A);
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.btn-back-nav:hover {
+  background: var(--bg-hover, #F1F5F9);
+  border-color: var(--primary, #2563EB);
+  color: var(--primary, #2563EB);
+  transform: translateX(-3px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+}
+
+.dark .btn-back-nav {
+  border-color: #334155;
+  background: #1E293B;
+  color: #F8FAFC;
+}
+
+.dark .btn-back-nav:hover {
+  background: #0F172A;
+  border-color: #60A5FA;
+  color: #60A5FA;
 }
 
 .fabric-layout-grid {
   display: grid;
-  grid-template-columns: 1fr 1.3fr;
+  grid-template-columns: minmax(360px, 440px) 1fr;
   gap: 24px;
+  width: 100%;
 }
 
-@media (max-width: 968px) {
+@media (max-width: 1024px) {
   .fabric-layout-grid {
     grid-template-columns: 1fr;
   }

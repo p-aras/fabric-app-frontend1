@@ -2286,13 +2286,14 @@ const FabricIssued = () => {
 
   if (!eligibilityChecked) {
     return (
-      <div style={{
+      <div className="eligibility-portal-root" style={{
         position: 'fixed',
         top: 0,
         left: 0,
         width: '100vw',
         height: '100vh',
-        backgroundColor: '#ffffff',
+        backgroundColor: 'var(--bg, #f8fafc)',
+        color: 'var(--text-primary, #0f172a)',
         zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',
@@ -2301,9 +2302,18 @@ const FabricIssued = () => {
         boxSizing: 'border-box'
       }}>
         <style>{`
+          .eligibility-portal-root {
+            background-color: var(--bg, #f8fafc);
+            color: var(--text-primary, #0f172a);
+          }
+          .dark .eligibility-portal-root {
+            background-color: #0b132b !important;
+            color: #f8fafc !important;
+          }
+
           .table-card {
-            background: #ffffff;
-            border: 1px solid #cbd5e1;
+            background: var(--surface, #ffffff);
+            border: 1px solid var(--border, #cbd5e1);
             border-radius: 12px;
             padding: 16px 20px;
             cursor: pointer;
@@ -2315,46 +2325,156 @@ const FabricIssued = () => {
             box-sizing: border-box;
           }
           .table-card:hover {
-            border-color: #0f172a;
+            border-color: #2563eb;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.08);
           }
+          .dark .table-card {
+            background: #1e293b !important;
+            border-color: #334155 !important;
+            color: #f8fafc !important;
+          }
+          .dark .table-card:hover {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3) !important;
+          }
+
           .table-card.locked {
             background-color: #fef2f2;
             border: 2px solid #ef4444;
           }
-          .table-card.eligible {
-            background-color: #ffffff;
-            border: 1px solid #cbd5e1;
+          .dark .table-card.locked {
+            background-color: rgba(239, 68, 68, 0.12) !important;
+            border: 2px solid #ef4444 !important;
           }
+
+          .table-card.eligible {
+            background-color: var(--surface, #ffffff);
+            border: 1px solid var(--border, #cbd5e1);
+          }
+
           .table-card.has-one {
             background-color: #fffbeb;
-            border: 1px solid #f59e0b;
+            border: 1.5px solid #f59e0b;
           }
+          .dark .table-card.has-one {
+            background-color: rgba(245, 158, 11, 0.12) !important;
+            border: 1.5px solid #f59e0b !important;
+          }
+
           .table-card.approved-unlocked {
             background-color: #f0fdf4;
             border: 2px solid #10b981;
           }
+          .dark .table-card.approved-unlocked {
+            background-color: rgba(16, 185, 129, 0.12) !important;
+            border: 2px solid #10b981 !important;
+          }
+
           .table-card.approved-unlocked:hover {
             border-color: #059669;
             box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
           }
+
+          .portal-top-border {
+            border-bottom: 2px solid #0f172a;
+          }
+          .dark .portal-top-border {
+            border-bottom-color: #334155 !important;
+          }
+
+          .portal-title-text {
+            color: #0f172a;
+          }
+          .dark .portal-title-text {
+            color: #f8fafc !important;
+          }
+
+          .portal-sub-text {
+            color: #475569;
+          }
+          .dark .portal-sub-text {
+            color: #94a3b8 !important;
+          }
+
+          .portal-search-box {
+            background: #ffffff;
+            border: 2px solid #0f172a;
+          }
+          .dark .portal-search-box {
+            background: #1e293b !important;
+            border-color: #334155 !important;
+          }
+
+          .portal-search-input {
+            background: transparent;
+            color: #0f172a;
+          }
+          .dark .portal-search-input {
+            color: #f8fafc !important;
+          }
+
+          .portal-refresh-btn {
+            background: #ffffff;
+            color: #0f172a;
+            border: 2px solid #0f172a;
+          }
+          .dark .portal-refresh-btn {
+            background: #1e293b !important;
+            color: #f8fafc !important;
+            border-color: #334155 !important;
+          }
+
+          .portal-exit-btn {
+            background: #0f172a;
+            color: #ffffff;
+          }
+          .dark .portal-exit-btn {
+            background: #2563eb !important;
+            color: #ffffff !important;
+          }
+
+          .table-card-title {
+            color: #0f172a;
+          }
+          .dark .table-card-title {
+            color: #f8fafc !important;
+          }
+
+          .table-card-lots {
+            color: #0f172a;
+          }
+          .dark .table-card-lots {
+            color: #cbd5e1 !important;
+          }
+
+          .table-card-staff {
+            border-top: 1px solid #cbd5e1;
+            color: #475569;
+          }
+          .dark .table-card-staff {
+            border-top-color: #334155 !important;
+            color: #94a3b8 !important;
+          }
+          .dark .table-card-staff span {
+            color: #f8fafc !important;
+          }
+
           @keyframes spin { to { transform: rotate(360deg); } }
           @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         `}</style>
 
         {/* Top Header */}
-        <div style={{
+        <div className="portal-top-border" style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '2px solid #0f172a',
           paddingBottom: '16px',
           marginBottom: '24px'
         }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', margin: 0, textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
+              <h1 className="portal-title-text" style={{ fontSize: '28px', fontWeight: '900', margin: 0, textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
                 Verify Issuance Eligibility
               </h1>
               {loadingEligibility && (
@@ -2381,18 +2501,19 @@ const FabricIssued = () => {
                 </span>
               )}
             </div>
-            <p style={{ fontSize: '13px', color: '#475569', margin: '4px 0 0 0', fontWeight: '500' }}>
+            <p className="portal-sub-text" style={{ fontSize: '13px', margin: '4px 0 0 0', fontWeight: '500' }}>
               Select an active cutting table. Tables with 2 or more uncut lots are locked in the frontend to avoid overloading.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #0f172a', borderRadius: '8px', overflow: 'hidden', background: '#ffffff' }}>
+            <div className="portal-search-box" style={{ display: 'flex', alignItems: 'center', borderRadius: '8px', overflow: 'hidden' }}>
               <input
                 type="text"
                 placeholder="OPEN ISSUED LOT..."
                 value={openIssuedLotNo}
                 onChange={e => setOpenIssuedLotNo(e.target.value)}
                 onKeyPress={e => e.key === 'Enter' && handleOpenIssuedLot(openIssuedLotNo)}
+                className="portal-search-input"
                 style={{
                   border: 'none',
                   padding: '10px 14px',
@@ -2407,7 +2528,7 @@ const FabricIssued = () => {
                 onClick={() => handleOpenIssuedLot(openIssuedLotNo)}
                 style={{
                   border: 'none',
-                  backgroundColor: '#0f172a',
+                  backgroundColor: '#2563eb',
                   color: '#ffffff',
                   padding: '10px 16px',
                   fontWeight: '700',
@@ -2424,11 +2545,9 @@ const FabricIssued = () => {
                 fetchApprovalRequests();
               }}
               disabled={loadingEligibility}
+              className="portal-refresh-btn"
               style={{
                 padding: '10px 16px',
-                backgroundColor: '#ffffff',
-                color: '#0f172a',
-                border: '2px solid #0f172a',
                 borderRadius: '8px',
                 fontWeight: '700',
                 cursor: loadingEligibility ? 'not-allowed' : 'pointer',
@@ -2443,10 +2562,9 @@ const FabricIssued = () => {
             </button>
             <button
               onClick={() => window.history.back()}
+              className="portal-exit-btn"
               style={{
                 padding: '10px 20px',
-                backgroundColor: '#0f172a',
-                color: '#ffffff',
                 border: 'none',
                 borderRadius: '8px',
                 fontWeight: '700',
@@ -2468,15 +2586,15 @@ const FabricIssued = () => {
                 width: '54px',
                 height: '54px',
                 border: '5px solid #e2e8f0',
-                borderTop: '5px solid #0f172a',
+                borderTop: '5px solid #2563eb',
                 borderRadius: '50%',
                 animation: 'spin 0.8s linear infinite',
                 marginBottom: '20px'
               }}></div>
-              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 8px 0' }}>
+              <h3 className="portal-title-text" style={{ fontSize: '18px', fontWeight: '800', margin: '0 0 8px 0' }}>
                 ⏳ Processing Table Queues & Admin Approvals...
               </h3>
-              <p style={{ fontSize: '13px', color: '#64748b', margin: 0, maxWidth: '440px', lineHeight: '1.5', fontWeight: '500' }}>
+              <p className="portal-sub-text" style={{ fontSize: '13px', margin: 0, maxWidth: '440px', lineHeight: '1.5', fontWeight: '500' }}>
                 Fetching active uncut lot assignments and synchronizing table permissions with backend database...
               </p>
             </div>
@@ -2525,7 +2643,7 @@ const FabricIssued = () => {
                     <div>
                       {/* Name & Badge */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>
+                        <span className="table-card-title" style={{ fontSize: '18px', fontWeight: '900' }}>
                           {t.name.toUpperCase()}
                         </span>
                         <span style={{
@@ -2539,7 +2657,7 @@ const FabricIssued = () => {
                       </div>
 
                       {/* Lots */}
-                      <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: '700', marginBottom: '12px' }}>
+                      <div className="table-card-lots" style={{ fontSize: '12px', fontWeight: '700', marginBottom: '12px' }}>
                         {lotsCount > 0 ? (
                           <span>Lots: {activeLots.map(l => l.lotNumber).join(', ')}</span>
                         ) : (
@@ -2564,18 +2682,16 @@ const FabricIssued = () => {
                     </div>
 
                     {/* Staff */}
-                    <div style={{
-                      borderTop: '1px solid #cbd5e1',
+                    <div className="table-card-staff" style={{
                       paddingTop: '8px',
                       fontSize: '11px',
-                      color: '#475569',
                       fontWeight: '600'
                     }}>
                       <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        SUP: <span style={{ color: '#0f172a' }}>{(t.Supervisor?.name || 'NONE').toUpperCase()}</span>
+                        SUP: <span>{(t.Supervisor?.name || 'NONE').toUpperCase()}</span>
                       </div>
                       <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        CUT: <span style={{ color: '#0f172a' }}>{(t.CutterMaster?.name || 'NONE').toUpperCase()}</span>
+                        CUT: <span>{(t.CutterMaster?.name || 'NONE').toUpperCase()}</span>
                       </div>
                     </div>
                   </div>
@@ -3201,27 +3317,24 @@ const FabricIssued = () => {
             </div>
 
             {isLoadingBarcodes && (
-              <div style={{
+              <div className="global-barcode-tracker-badge loading" style={{
                 marginTop: '8px',
                 padding: '6px 12px',
-                background: '#e0f2fe',
                 borderRadius: '6px',
                 fontSize: '11px',
-                color: '#0369a1',
                 textAlign: 'center'
               }}>
                 🔄 Loading global barcode registry...
               </div>
             )}
             {!isLoadingBarcodes && globalIssuedBarcodes.size > 0 && (
-              <div style={{
+              <div className="global-barcode-tracker-badge ready" style={{
                 marginTop: '8px',
                 padding: '4px 8px',
-                background: '#d1fae5',
                 borderRadius: '4px',
                 fontSize: '10px',
-                color: '#065f46',
-                textAlign: 'center'
+                textAlign: 'center',
+                fontWeight: '600'
               }}>
                 ✓ {globalIssuedBarcodes.size} unique barcodes tracked globally (no duplicates allowed)
               </div>
@@ -3611,13 +3724,11 @@ const FabricIssued = () => {
 
           {/* ── Kharcha (Accessories / Expense) Issuance Panel ── */}
           {selectedJob && (
-            <div style={{
-              background: 'white',
+            <div className="kharcha-issuance-card" style={{
               borderRadius: '16px',
               boxShadow: '0 2px 16px rgba(0,0,0,0.08)',
               marginBottom: '24px',
-              overflow: 'hidden',
-              border: '1px solid #e2e8f0'
+              overflow: 'hidden'
             }}>
               {/* Header */}
               <div style={{
@@ -3692,16 +3803,13 @@ const FabricIssued = () => {
               </div>
 
               {/* Table Header */}
-              <div style={{
+              <div className="kharcha-table-header" style={{
                 display: 'grid',
                 gridTemplateColumns: '40px 1.2fr 1.5fr 1.2fr 1.8fr 44px',
                 gap: '8px',
                 padding: '10px 22px',
-                background: '#f8fafc',
-                borderBottom: '1px solid #e2e8f0',
                 fontSize: '11px',
                 fontWeight: '700',
-                color: '#64748b',
                 letterSpacing: '0.5px',
                 textTransform: 'uppercase',
                 opacity: noKharcha ? 0.5 : 1
@@ -3715,17 +3823,14 @@ const FabricIssued = () => {
               </div>
 
               {/* Rows */}
-              <div style={{ padding: '10px 22px 16px' }}>
+              <div className="kharcha-table-body" style={{ padding: '10px 22px 16px' }}>
                 {noKharcha ? (
-                  <div style={{
+                  <div className="kharcha-empty-box" style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     padding: '30px',
-                    background: '#f8fafc',
                     borderRadius: '12px',
-                    border: '1.5px dashed #cbd5e1',
-                    color: '#64748b',
                     fontWeight: '600',
                     fontSize: '14px',
                     gap: '8px'
@@ -3736,6 +3841,7 @@ const FabricIssued = () => {
                   kharchaItems.map((row, idx) => (
                   <div
                     key={row.id}
+                    className="kharcha-table-row"
                     style={{
                       display: 'grid',
                       gridTemplateColumns: '40px 1.2fr 1.5fr 1.2fr 1.8fr 44px',
@@ -3743,7 +3849,7 @@ const FabricIssued = () => {
                       alignItems: 'center',
                       marginBottom: '8px',
                       padding: '8px 0',
-                      borderBottom: idx < kharchaItems.length - 1 ? '1px solid #f1f5f9' : 'none'
+                      borderBottom: idx < kharchaItems.length - 1 ? '1px solid var(--border, #f1f5f9)' : 'none'
                     }}
                   >
                     {/* # */}
@@ -3760,16 +3866,14 @@ const FabricIssued = () => {
                     <select
                       value={row.shade}
                       onChange={e => updateKharchaRow(row.id, 'shade', e.target.value)}
+                      className="kharcha-input"
                       style={{
                         width: '100%',
                         padding: '9px 13px',
-                        border: '1.5px solid #e2e8f0',
                         borderRadius: '9px',
                         fontSize: '13px',
                         fontWeight: '500',
                         outline: 'none',
-                        background: '#fff',
-                        color: '#1e293b',
                         boxSizing: 'border-box'
                       }}
                     >
@@ -3785,28 +3889,27 @@ const FabricIssued = () => {
                       placeholder="Item name (Thread, Elastic...)"
                       value={row.item}
                       onChange={e => updateKharchaRow(row.id, 'item', e.target.value)}
+                      className="kharcha-input"
                       style={{
                         width: '100%',
                         padding: '9px 13px',
-                        border: '1.5px solid #e2e8f0',
                         borderRadius: '9px',
                         fontSize: '13px',
                         fontWeight: '500',
                         outline: 'none',
-                        background: '#fff',
-                        color: '#1e293b',
                         boxSizing: 'border-box'
                       }}
                     />
 
                     {/* Mode selector */}
-                    <div style={{ display: 'flex', border: '1.5px solid #e2e8f0', borderRadius: '9px', overflow: 'hidden' }}>
+                    <div className="kharcha-mode-wrapper" style={{ display: 'flex', borderRadius: '9px', overflow: 'hidden' }}>
                       <button
                         type="button"
                         onClick={() => {
                           updateKharchaRow(row.id, 'mode', 'manual');
                           updateKharchaRow(row.id, 'barcodeId', '');
                         }}
+                        className={`kharcha-mode-btn ${row.mode === 'manual' ? 'active' : ''}`}
                         style={{
                           flex: 1,
                           padding: '8px 10px',
@@ -3814,8 +3917,6 @@ const FabricIssued = () => {
                           fontWeight: '700',
                           border: 'none',
                           cursor: 'pointer',
-                          background: row.mode === 'manual' ? '#5f3dc4' : '#fff',
-                          color: row.mode === 'manual' ? '#fff' : '#475569',
                           transition: 'all 0.2s'
                         }}
                       >
@@ -3824,6 +3925,7 @@ const FabricIssued = () => {
                       <button
                         type="button"
                         onClick={() => updateKharchaRow(row.id, 'mode', 'barcode')}
+                        className={`kharcha-mode-btn ${row.mode === 'barcode' ? 'active' : ''}`}
                         style={{
                           flex: 1,
                           padding: '8px 10px',
@@ -3831,8 +3933,6 @@ const FabricIssued = () => {
                           fontWeight: '700',
                           border: 'none',
                           cursor: 'pointer',
-                          background: row.mode === 'barcode' ? '#5f3dc4' : '#fff',
-                          color: row.mode === 'barcode' ? '#fff' : '#475569',
                           transition: 'all 0.2s'
                         }}
                       >
@@ -3850,16 +3950,14 @@ const FabricIssued = () => {
                           step="0.01"
                           value={row.weight}
                           onChange={e => updateKharchaRow(row.id, 'weight', e.target.value)}
+                          className="kharcha-input"
                           style={{
                             width: '100%',
                             padding: '9px 13px',
-                            border: '1.5px solid #e2e8f0',
                             borderRadius: '9px',
                             fontSize: '13px',
                             fontWeight: '600',
                             outline: 'none',
-                            background: '#fff',
-                            color: '#1e293b',
                             boxSizing: 'border-box'
                           }}
                         />
@@ -3877,15 +3975,13 @@ const FabricIssued = () => {
                                   handleKharchaBarcodeSearch(row.id, row.barcodeInput);
                                 }
                               }}
+                              className="kharcha-input"
                               style={{
                                 flex: 1,
                                 padding: '9px 13px',
-                                border: '1.5px solid #e2e8f0',
                                 borderRadius: '9px',
                                 fontSize: '13px',
                                 outline: 'none',
-                                background: '#fff',
-                                color: '#1e293b',
                                 boxSizing: 'border-box'
                               }}
                             />
@@ -3912,12 +4008,11 @@ const FabricIssued = () => {
                               {row.barcodes.map(b => (
                                 <span
                                   key={b.barcodeId}
+                                  className="kharcha-barcode-pill"
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '4px',
-                                    background: '#e0f2fe',
-                                    color: '#0369a1',
                                     padding: '3px 8px',
                                     borderRadius: '12px',
                                     fontSize: '11px',
@@ -3931,7 +4026,7 @@ const FabricIssued = () => {
                                     style={{
                                       border: 'none',
                                       background: 'transparent',
-                                      color: '#0284c7',
+                                      color: 'inherit',
                                       cursor: 'pointer',
                                       fontSize: '11px',
                                       padding: '0 0 0 2px',
@@ -3962,16 +4057,14 @@ const FabricIssued = () => {
                         width: '34px', height: '34px',
                         border: 'none',
                         borderRadius: '8px',
-                        background: kharchaItems.length === 1 ? '#f1f5f9' : '#fee2e2',
-                        color: kharchaItems.length === 1 ? '#cbd5e1' : '#ef4444',
+                        background: kharchaItems.length === 1 ? 'rgba(148,163,184,0.1)' : 'rgba(239,68,68,0.15)',
+                        color: kharchaItems.length === 1 ? '#94a3b8' : '#ef4444',
                         fontSize: '16px',
                         cursor: kharchaItems.length === 1 ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         transition: 'background 0.2s',
                         flexShrink: 0
                       }}
-                      onMouseOver={e => { if (kharchaItems.length > 1) e.currentTarget.style.background = '#fecaca'; }}
-                      onMouseOut={e => { if (kharchaItems.length > 1) e.currentTarget.style.background = '#fee2e2'; }}
                     >
                       ✕
                     </button>
@@ -3981,36 +4074,32 @@ const FabricIssued = () => {
             </div>
 
               {/* Footer summary */}
-              <div style={{
+              <div className="kharcha-footer-summary" style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '12px 22px',
-                background: '#f8fafc',
-                borderTop: '1px solid #e2e8f0',
                 flexWrap: 'wrap',
                 gap: '10px'
               }}>
-                <div style={{ fontSize: '13px', color: '#64748b' }}>
-                  <span style={{ fontWeight: '700', color: '#5f3dc4' }}>{kharchaItems.filter(r => r.item.trim()).length}</span> item(s) entered
+                <div style={{ fontSize: '13px' }}>
+                  <span style={{ fontWeight: '700', color: '#818cf8' }}>{kharchaItems.filter(r => r.item.trim()).length}</span> item(s) entered
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-                  <div style={{ fontSize: '13px', color: '#64748b' }}>
-                    Total Weight: <span style={{ fontWeight: '800', color: '#1e293b', fontSize: '15px' }}>{getTotalKharchaWeight().toFixed(2)} kg</span>
+                  <div style={{ fontSize: '13px' }}>
+                    Total Weight: <span className="kharcha-total-weight-text" style={{ fontWeight: '800', fontSize: '15px' }}>{getTotalKharchaWeight().toFixed(2)} kg</span>
                   </div>
                   <button
                     onClick={addKharchaRow}
+                    className="kharcha-add-row-btn"
                     style={{
                       padding: '7px 14px',
-                      background: 'rgba(255,255,255,0.06)',
-                      color: '#475569', border: '1px solid #e2e8f0', borderRadius: '8px',
+                      borderRadius: '8px',
                       fontSize: '12px', fontWeight: '700',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                       marginRight: '8px'
                     }}
-                    onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'}
-                    onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                   >
                     + Add Row
                   </button>
@@ -4027,12 +4116,6 @@ const FabricIssued = () => {
                       transition: 'all 0.2s',
                       opacity: kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '').length === 0 || isSubmitting ? 0.6 : 1
                     }}
-                    onMouseOver={e => {
-                      if (!(kharchaItems.filter(item => item.item.trim() !== '' || item.weight !== '').length === 0 || isSubmitting)) {
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                      }
-                    }}
-                    onMouseOut={e => e.currentTarget.style.transform = 'none'}
                   >
                     {isSubmitting ? '⏳ Processing...' : '✓ Issue Kharcha'}
                   </button>

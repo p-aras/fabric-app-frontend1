@@ -254,25 +254,41 @@ export default function HallWiseCuttingReport() {
 
       drawPageBorder();
 
-      // Heading and Subtitle
+      // Left Side - Blank Circle with Number inside (Non-colorful Black & White)
+      const circleR = 12;
+      const circleX = M + 15 + circleR;
+      const circleY = y + 17;
+
+      // Draw Blank Circle with clean solid black border
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1.4);
+      doc.circle(circleX, circleY, circleR, "FD");
+
+      // Round number written inside the circle
       doc.setTextColor(0, 0, 0);
-      setFont("bold", 14);
-      doc.text("HALL WISE CUTTING REPORT", M + 15, y + 15);
+      setFont("bold", 12);
+      doc.text("9", circleX, circleY + 4, { align: "center" });
 
-      setFont("normal", 9);
-      doc.text(`Report Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+      // Numbering Label & Title
+      setFont("bold", 8);
+      doc.setTextColor(0, 0, 0);
+      doc.text("9TH REPORT", M + 45, y + 11);
 
-      // Brief Description
-      setFont("italic", 8.5);
+      setFont("bold", 13);
+      doc.setTextColor(0, 0, 0);
+      doc.text("HALL WISE CUTTING REPORT", M + 45, y + 25);
+
+      setFont("normal", 8);
       doc.setTextColor(80, 80, 80);
-      doc.text("This report briefs the daily cutting quantity achieved across different production halls and their respective tables, under supervisor control.", M + 15, y + 42);
+      doc.text(`Report Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 45, y + 36);
 
       // Divider Line
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(1);
-      doc.line(M, y + 49, PAGE_W - M, y + 49);
+      doc.line(M, y + 44, PAGE_W - M, y + 44);
 
-      y += 62;
+      y += 58;
 
       // Hall Summaries Box (Total of pcs hall wise)
       doc.setFillColor(255, 255, 255);

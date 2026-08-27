@@ -1026,5 +1026,391 @@
   display: none;
 }
 
+/* ==========================================================================
+   DARK MODE COMPATIBILITY FOR FABRIC ISSUE PORTAL
+   ========================================================================== */
+.dark .fabric-issued-container {
+  color: #f8fafc;
+}
+
+/* Top bar & Controls */
+.dark .top-bar-container {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+
+.dark .top-search-input {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark .top-refresh-btn {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark .top-refresh-btn:hover {
+  background: #1e293b !important;
+}
+
+/* Scanner Section */
+.dark .scanner-section-modern {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+
+.dark .scanner-header-modern {
+  border-bottom-color: #334155 !important;
+}
+
+.dark .scanner-title h3 {
+  color: #f8fafc !important;
+}
+
+.dark .scanner-stats .stat-badge-sm {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border: 1px solid #334155;
+}
+
+.dark .scanner-stats .stat-badge-sm strong {
+  color: #60a5fa !important;
+}
+
+.dark .scanner-box-panel {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+.dark .scanner-box-panel h4 {
+  color: #93c5fd !important;
+}
+
+.dark .scanner-input-modern {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+.dark .scanner-input-modern:focus {
+  border-color: #3b82f6 !important;
+  background-color: #1e293b !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2) !important;
+}
+
+.dark .scanner-hint-modern {
+  background: #1e293b !important;
+  color: #94a3b8 !important;
+  border: 1px solid #334155;
+}
+
+.dark .searched-roll-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+.dark .searched-roll-header {
+  border-bottom-color: #334155 !important;
+}
+
+/* Summary Cards (Job Order, Lot, Fabric, Quantity, Default Table) */
+.dark .summary-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
+}
+
+.dark .summary-card:hover {
+  border-color: #475569 !important;
+}
+
+.dark .card-icon {
+  background: #0f172a !important;
+  border: 1px solid #334155;
+}
+
+.dark .card-label {
+  color: #94a3b8 !important;
+}
+
+.dark .card-value {
+  color: #f8fafc !important;
+}
+
+.dark .card-value.highlight {
+  color: #60a5fa !important;
+}
+
+/* Shade Toolbar */
+.dark .shade-toolbar {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+.dark .shade-toolbar-label {
+  color: #f8fafc !important;
+}
+
+.dark .shade-btn {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark .shade-btn:hover {
+  background: #1e293b !important;
+}
+
+.dark .shade-btn.select-all {
+  color: #60a5fa !important;
+  border-color: #2563eb !important;
+}
+
+.dark .shade-btn.deselect-all {
+  color: #f87171 !important;
+  border-color: #ef4444 !important;
+}
+
+.dark .shade-selection-count {
+  color: #60a5fa !important;
+}
+
+/* Dashboard Panels (Info Panel, Issuance Panel, History) */
+.dark .info-panel,
+.dark .issuance-panel,
+.dark .history-section {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+
+.dark .panel-header,
+.dark .history-header {
+  background: #0f172a !important;
+  border-bottom-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+.dark .panel-title h3,
+.dark .history-title h3 {
+  color: #f8fafc !important;
+}
+
+.dark .info-group h4 {
+  color: #94a3b8 !important;
+  border-bottom-color: #334155 !important;
+}
+
+.dark .info-label {
+  color: #94a3b8 !important;
+}
+
+.dark .info-value {
+  color: #f8fafc !important;
+}
+
+.dark .stat-chip {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border: 1px solid #334155;
+}
+
+.dark .stat-chip strong {
+  color: #60a5fa !important;
+}
+
+.dark .shade-item {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+.dark .shade-item.selected {
+  background: rgba(37, 99, 235, 0.15) !important;
+  border-color: #3b82f6 !important;
+}
+
+.dark .shade-name {
+  color: #f8fafc !important;
+}
+
+.dark .shade-current-badge {
+  background: rgba(37, 99, 235, 0.2) !important;
+  border-color: #2563eb !important;
+  color: #93c5fd !important;
+}
+
+.dark .history-card {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+.dark .history-badge {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+.dark .history-item-tag {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #93c5fd !important;
+}
+
+.dark .empty-state {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+.global-barcode-tracker-badge.loading {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+.global-barcode-tracker-badge.ready {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.dark .global-barcode-tracker-badge.loading {
+  background: rgba(3, 105, 161, 0.2) !important;
+  color: #7dd3fc !important;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+}
+.dark .global-barcode-tracker-badge.ready {
+  background: rgba(6, 95, 70, 0.25) !important;
+  color: #6ee7b7 !important;
+  border: 1px solid rgba(110, 231, 183, 0.2);
+}
+
+/* ==========================================================================
+   KHARCHA ISSUANCE PANEL STYLES
+   ========================================================================== */
+.kharcha-issuance-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+.dark .kharcha-issuance-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+
+.kharcha-table-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+}
+.dark .kharcha-table-header {
+  background: #0f172a !important;
+  border-bottom-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+
+.kharcha-table-body {
+  background: #ffffff;
+}
+.dark .kharcha-table-body {
+  background: #1e293b !important;
+}
+
+.kharcha-empty-box {
+  background: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  color: #64748b;
+}
+.dark .kharcha-empty-box {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+
+.kharcha-input {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  color: #1e293b;
+}
+.dark .kharcha-input {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+.dark .kharcha-input:focus {
+  border-color: #6366f1 !important;
+}
+
+.kharcha-mode-wrapper {
+  border: 1.5px solid #e2e8f0;
+}
+.dark .kharcha-mode-wrapper {
+  border-color: #334155 !important;
+}
+
+.kharcha-mode-btn {
+  background: #ffffff;
+  color: #475569;
+}
+.kharcha-mode-btn.active {
+  background: #5f3dc4;
+  color: #ffffff;
+}
+.dark .kharcha-mode-btn {
+  background: #0f172a;
+  color: #94a3b8;
+}
+.dark .kharcha-mode-btn.active {
+  background: #6366f1 !important;
+  color: #ffffff !important;
+}
+
+.kharcha-barcode-pill {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+.dark .kharcha-barcode-pill {
+  background: rgba(3, 105, 161, 0.25) !important;
+  color: #7dd3fc !important;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+}
+
+.kharcha-footer-summary {
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  color: #64748b;
+}
+.dark .kharcha-footer-summary {
+  background: #0f172a !important;
+  border-top-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+
+.kharcha-total-weight-text {
+  color: #1e293b;
+}
+.dark .kharcha-total-weight-text {
+  color: #f8fafc !important;
+}
+
+.kharcha-add-row-btn {
+  background: rgba(255, 255, 255, 0.06);
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.kharcha-add-row-btn:hover {
+  background: #f1f5f9;
+}
+.dark .kharcha-add-row-btn {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+.dark .kharcha-add-row-btn:hover {
+  background: #334155 !important;
+}
+
 
 

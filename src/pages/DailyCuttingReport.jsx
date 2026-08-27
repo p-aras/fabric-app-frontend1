@@ -459,27 +459,50 @@ export default function DailyCuttingReport() {
 
     drawPageBorder();
 
-    // Left Side - Header Title
-    doc.setTextColor(0, 0, 0);
-    setFont("bold", 14);
-    doc.text("DAILY CUTTING COMPLETED REPORT", M + 15, y + 15);
+    // Left Side - Blank Circle with Number inside (Non-colorful Black & White)
+    const circleR = 12;
+    const circleX = M + 15 + circleR;
+    const circleY = y + 17;
 
-    setFont("normal", 9);
-    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 15, y + 29);
+    // Draw Blank Circle with clean solid black border
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.4);
+    doc.circle(circleX, circleY, circleR, "FD");
+
+    // Round number written inside the circle
+    doc.setTextColor(0, 0, 0);
+    setFont("bold", 12);
+    doc.text("2", circleX, circleY + 4, { align: "center" });
+
+    // Numbering Label & Title
+    setFont("bold", 8);
+    doc.setTextColor(0, 0, 0);
+    doc.text("2ND REPORT", M + 45, y + 11);
+
+    setFont("bold", 13);
+    doc.setTextColor(0, 0, 0);
+    doc.text("DAILY CUTTING PRODUCTION REPORT", M + 45, y + 25);
+
+    setFont("normal", 8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Date: ${selectedDate}  |  Generated on: ${new Date().toLocaleString()}`, M + 45, y + 36);
 
     // Right Side - Today's Attendance Block
+    doc.setTextColor(0, 0, 0);
     setFont("bold", 8);
     doc.text("TODAY'S ATTENDANCE SUMMARY", PAGE_W - M - 290, y + 10);
     setFont("normal", 7.5);
+    doc.setTextColor(60, 60, 60);
     doc.text(attData.summary, PAGE_W - M - 290, y + 21);
     doc.text(attData.absenteesText, PAGE_W - M - 290, y + 31);
 
     // Divider Line
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(1);
-    doc.line(M, y + 39, PAGE_W - M, y + 39);
+    doc.line(M, y + 44, PAGE_W - M, y + 44);
 
-    y += 54;
+    y += 58;
 
     // Summary Metrics Box
     doc.setFillColor(255, 255, 255);
@@ -824,11 +847,45 @@ export default function DailyCuttingReport() {
         color: '#ffffff'
       }}>
         <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '3px 12px 3px 4px',
+              borderRadius: '20px',
+              border: '1.5px solid #FFFFFF',
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#FFFFFF'
+            }}>
+              <span style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                border: '1.5px solid #FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 900,
+                fontSize: '12px',
+                color: '#FFFFFF',
+                background: 'rgba(0,0,0,0.2)'
+              }}>
+                2
+              </span>
+              <span style={{ fontWeight: 800, fontSize: '11px', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                2nd Report
+              </span>
+            </div>
+            <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, color: '#C7D2FE' }}>
+              Cutting Operations · 2nd Report
+            </span>
+          </div>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Scissors size={26} style={{ color: '#818cf8' }} /> Daily Cutting Report
+            <Scissors size={26} style={{ color: '#818cf8' }} /> Daily Cutting Production Report (2nd Report)
           </h1>
           <p style={{ margin: '6px 0 0 0', fontSize: 13, color: '#c7d2fe', fontWeight: 500 }}>
-            Google Sheets integrated analysis of completed cutting production lots.
+            Completed cutting production lots, style-wise pieces & yield totals.
           </p>
         </div>
 

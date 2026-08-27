@@ -1,4 +1,4 @@
-export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://fabric-app-backend-new.onrender.com/api';
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
 
 
 const getHeaders = () => {
@@ -386,6 +386,352 @@ export const store = {
     const response = await fetch(`${BASE_URL}/google-sheets/fetch-by-lot/${encodeURIComponent(lotNo)}`, {
       method: 'GET',
       headers: getHeaders(),
+    });
+    return handleResponse(response);
+  },
+
+  fetchPendingStockByLot: async (lotNo) => {
+    const response = await fetch(`${BASE_URL}/google-sheets/pending-stock-by-lot/${encodeURIComponent(lotNo)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return handleResponse(response);
+  },
+
+  // --- DIRECT GOOGLE SHEETS API (FabricStock Sheet) ---
+  fetchFabricStockDirect: async (lotNo) => {
+    const API_KEY = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY || 'AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk';
+    const SPREADSHEET_ID = import.meta.env.VITE_GOOGLE_SPREADSHEET_ID || '1SKGM8tsZ6nCJbCsY9M-eUKaS-ohSLM3Vi8bRKD4w0IA';
+    const cleanLot = String(lotNo || '').trim();
+    if (!cleanLot) return { success: true, data: [] };
+
+    const parseSheetDateStr = (dateStr) => {
+      if (!dateStr) return '';
+      const raw = String(dateStr).trim();
+      if (!raw) return '';
+
+      // If already in YYYY-MM-DD format
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+      const normalized = raw.replace(/\//g, '-').replace(/\s+/g, '-');
+      const parts = normalized.split('-');
+      if (parts.length === 3) {
+        let p0 = parseInt(parts[0], 10);
+        let p1 = parts[1].toLowerCase();
+        let p2 = parseInt(parts[2], 10);
+
+        const months = {
+          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+        };
+        let month = null;
+
+        // Check if middle part is named month (e.g. Nov, Apr)
+        for (const [k, v] of Object.entries(months)) {
+          if (p1.startsWith(k)) {
+            month = v;
+            break;
+          }
+        }
+
+        // If not named month, check if numeric month
+        if (!month && !isNaN(parseInt(p1, 10))) {
+          const numM = parseInt(p1, 10);
+          if (numM >= 1 && numM <= 12) {
+            month = String(numM).padStart(2, '0');
+          }
+        }
+
+        // Handle day and year
+        let day = p0;
+        let year = p2;
+
+        // In case format is YYYY-MM-DD
+        if (p0 > 1000) {
+          year = p0;
+          day = p2;
+        }
+
+        if (month && !isNaN(day) && !isNaN(year)) {
+          if (year < 100) year = 2000 + year;
+          return `${year}-${month}-${String(day).padStart(2, '0')}`;
+        }
+      }
+      return raw;
+    };
+
+    const normalizeLot = (str) => String(str || '').trim().toLowerCase().replace(/[\s\-_/]/g, '');
+    const targetNorm = normalizeLot(cleanLot);
+
+    // 1. Try Direct Google Sheets v4 API
+    try {
+      const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent('FabricStock!A1:Z')}?key=${API_KEY}`;
+      const res = await fetch(sheetsUrl);
+      if (res.ok) {
+        const json = await res.json();
+        const rows = json.values || [];
+        if (rows.length > 0) {
+          // Detect header row (usually row 4 / index 3)
+          let headerIdx = -1;
+          for (let i = 0; i < Math.min(rows.length, 10); i++) {
+            const rStr = rows[i].map(c => String(c).toLowerCase()).join(' ');
+            if (rStr.includes('lot no') || rStr.includes('item name') || (rStr.includes('issue no') && rStr.includes('party'))) {
+              headerIdx = i;
+              break;
+            }
+          }
+          if (headerIdx === -1) headerIdx = 3;
+
+          const matches = [];
+          for (let i = headerIdx + 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || row.length === 0) continue;
+            const rowLot = String(row[4] || '').trim(); // Column E: Lot No
+            if (!rowLot) continue;
+
+            const rowNorm = normalizeLot(rowLot);
+            if (rowNorm === targetNorm || rowNorm.includes(targetNorm) || targetNorm.includes(rowNorm)) {
+              const billNo = String(row[0] || '').trim(); // Column A: Issue No.
+              const dateVal = parseSheetDateStr(row[1]); // Column B: IssueTrDate
+              const party = String(row[2] || '').trim(); // Column C: Party
+              const srNo = String(row[3] || '').trim(); // Column D: SrNo
+              const itemName = String(row[5] || '').trim(); // Column F: Item Name
+              
+              let joNo = String(row[6] || '').trim(); // Column G: JO No / Job Order
+              let rawUnit = String(row[7] || '').trim(); // Column H: Unit
+              let rawShade = String(row[8] || '').trim(); // Column I: Shade
+              
+              // Handle JO in unit column
+              if (rawUnit.toUpperCase().startsWith('JO') || rawUnit.toUpperCase().includes('JOB')) {
+                if (!joNo) joNo = rawUnit;
+                rawUnit = 'KGS';
+              }
+
+              // Normalize unit to standard KGs/Pcs/Mtrs
+              let unitVal = 'KGs';
+              if (rawUnit.toUpperCase().includes('PCS') || rawUnit.toUpperCase().includes('PC')) {
+                unitVal = 'Pcs';
+              } else if (rawUnit.toUpperCase().includes('MTR')) {
+                unitVal = 'Mtrs';
+              } else {
+                unitVal = 'KGs';
+              }
+
+              // Clean shade
+              let shadeVal = rawShade;
+              if (['KGS', 'PCS', 'MTR', 'MTRS', 'KG'].includes(shadeVal.toUpperCase())) {
+                shadeVal = '';
+              }
+
+              const rolls = parseInt(String(row[9] || '1').replace(/,/g, '')) || 1; // Column J (labeled Quantity): Number of Rolls
+              const issuedWeight = parseFloat(String(row[10] || '0').replace(/,/g, '')) || 0.00; // Column K (labeled Process): Issued Weight / Quantity
+              const processVal = String(row[11] || 'DYEING').trim(); // Column L (labeled IssueRemarks): Process
+
+              matches.push({
+                rowId: i,
+                lotNumber: rowLot,
+                party: party,
+                cmfParty: party,
+                fabricName: itemName,
+                billNumber: billNo,
+                issueNo: billNo,
+                issueDate: dateVal,
+                srNo: srNo,
+                jobOrderNo: joNo,
+                unit: unitVal,
+                shade: shadeVal,
+                rolls: rolls,
+                issueRolls: rolls,
+                totalRolls: rolls,
+                quantity: issuedWeight,
+                issueQty: issuedWeight,
+                billedQty: issuedWeight,
+                weight: issuedWeight,
+                opQty: issuedWeight,
+                balance: issuedWeight,
+                process: processVal,
+                remarks: `FabricStock Entry Row #${i + 1}`
+              });
+            }
+          }
+
+          if (matches.length > 0) {
+            return {
+              success: true,
+              source: 'google-sheets-api-v4',
+              lotNumber: cleanLot,
+              count: matches.length,
+              data: matches
+            };
+          }
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[Direct Sheets API] Error fetching from Google Sheets v4 API:', apiErr);
+    }
+
+    // 2. Fallback to direct CSV export from Google Sheets (gid=22117471 for FabricStock)
+    try {
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=22117471`;
+      const csvRes = await fetch(csvUrl);
+      if (csvRes.ok) {
+        const text = await csvRes.text();
+        const lines = text.split(/\r?\n/).map(l => {
+          const cells = [];
+          let cur = '';
+          let inQuote = false;
+          for (let c = 0; c < l.length; c++) {
+            const ch = l[c];
+            if (ch === '"') {
+              inQuote = !inQuote;
+            } else if (ch === ',' && !inQuote) {
+              cells.push(cur.trim());
+              cur = '';
+            } else {
+              cur += ch;
+            }
+          }
+          cells.push(cur.trim());
+          return cells;
+        });
+
+        if (lines.length > 4) {
+          const matches = [];
+          for (let i = 4; i < lines.length; i++) {
+            const row = lines[i];
+            if (!row || row.length < 5) continue;
+            const rowLot = String(row[4] || '').trim();
+            if (!rowLot) continue;
+            const rowNorm = normalizeLot(rowLot);
+            if (rowNorm === targetNorm || rowNorm.includes(targetNorm) || targetNorm.includes(rowNorm)) {
+              const billNo = String(row[0] || '').trim();
+              const dateVal = parseSheetDateStr(row[1]);
+              const party = String(row[2] || '').trim();
+              const srNo = String(row[3] || '').trim();
+              const itemName = String(row[5] || '').trim();
+              
+              let joNo = String(row[6] || '').trim();
+              let rawUnit = String(row[7] || '').trim();
+              let rawShade = String(row[8] || '').trim();
+
+              if (rawUnit.toUpperCase().startsWith('JO') || rawUnit.toUpperCase().includes('JOB')) {
+                if (!joNo) joNo = rawUnit;
+                rawUnit = 'KGS';
+              }
+
+              let unitVal = 'KGs';
+              if (rawUnit.toUpperCase().includes('PCS') || rawUnit.toUpperCase().includes('PC')) {
+                unitVal = 'Pcs';
+              } else if (rawUnit.toUpperCase().includes('MTR')) {
+                unitVal = 'Mtrs';
+              } else {
+                unitVal = 'KGs';
+              }
+
+              let shadeVal = rawShade;
+              if (['KGS', 'PCS', 'MTR', 'MTRS', 'KG'].includes(shadeVal.toUpperCase())) {
+                shadeVal = '';
+              }
+
+              const rolls = parseInt(String(row[9] || '1').replace(/,/g, '').replace(/"/g, '')) || 1;
+              const issuedWeight = parseFloat(String(row[10] || '0').replace(/,/g, '').replace(/"/g, '')) || 0.00;
+              const processVal = String(row[11] || 'DYEING').trim();
+
+              matches.push({
+                rowId: i,
+                lotNumber: rowLot,
+                party: party,
+                cmfParty: party,
+                fabricName: itemName,
+                billNumber: billNo,
+                issueNo: billNo,
+                issueDate: dateVal,
+                srNo: srNo,
+                jobOrderNo: joNo,
+                unit: unitVal,
+                shade: shadeVal,
+                rolls: rolls,
+                issueRolls: rolls,
+                totalRolls: rolls,
+                quantity: issuedWeight,
+                issueQty: issuedWeight,
+                billedQty: issuedWeight,
+                weight: issuedWeight,
+                opQty: issuedWeight,
+                balance: issuedWeight,
+                process: processVal,
+                remarks: `CSV Export Entry Row #${i + 1}`
+              });
+            }
+          }
+
+          if (matches.length > 0) {
+            return {
+              success: true,
+              source: 'google-sheets-csv-export',
+              lotNumber: cleanLot,
+              count: matches.length,
+              data: matches
+            };
+          }
+        }
+      }
+    } catch (csvErr) {
+      console.warn('[Direct Sheets CSV] Error fetching CSV export fallback:', csvErr);
+    }
+
+    // 3. Fallback to backend API
+    return store.fetchPendingStockByLot(cleanLot);
+  },
+
+  fetchDyeingRecdWeightByLot: async (lotNo) => {
+    const response = await fetch(`${BASE_URL}/dyeing-materials/recd-weight-by-lot/${encodeURIComponent(lotNo)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return handleResponse(response);
+  },
+
+  // --- SHORTAGE REPORTS API ---
+  createShortageReport: async (reportData) => {
+    const response = await fetch(`${BASE_URL}/shortage-reports`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(reportData)
+    });
+    return handleResponse(response);
+  },
+
+  getShortageReports: async (queryParams = {}) => {
+    const qs = new URLSearchParams(queryParams).toString();
+    const response = await fetch(`${BASE_URL}/shortage-reports${qs ? `?${qs}` : ''}`, {
+      method: 'GET',
+      headers: getHeaders()
+    });
+    return handleResponse(response);
+  },
+
+  getShortageReportById: async (id) => {
+    const response = await fetch(`${BASE_URL}/shortage-reports/${encodeURIComponent(id)}`, {
+      method: 'GET',
+      headers: getHeaders()
+    });
+    return handleResponse(response);
+  },
+
+  updateShortageInspection: async (id, inspectionData) => {
+    const response = await fetch(`${BASE_URL}/shortage-reports/${encodeURIComponent(id)}/inspection`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(inspectionData)
+    });
+    return handleResponse(response);
+  },
+
+  deleteShortageReport: async (id) => {
+    const response = await fetch(`${BASE_URL}/shortage-reports/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: getHeaders()
     });
     return handleResponse(response);
   },
