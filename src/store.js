@@ -1,4 +1,4 @@
-export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://fabric-app-backend-new.onrender.com/api';
 
 
 const getHeaders = () => {
@@ -496,11 +496,11 @@ export const store = {
               const party = String(row[2] || '').trim(); // Column C: Party
               const srNo = String(row[3] || '').trim(); // Column D: SrNo
               const itemName = String(row[5] || '').trim(); // Column F: Item Name
-              
+
               let joNo = String(row[6] || '').trim(); // Column G: JO No / Job Order
               let rawUnit = String(row[7] || '').trim(); // Column H: Unit
               let rawShade = String(row[8] || '').trim(); // Column I: Shade
-              
+
               // Handle JO in unit column
               if (rawUnit.toUpperCase().startsWith('JO') || rawUnit.toUpperCase().includes('JOB')) {
                 if (!joNo) joNo = rawUnit;
@@ -609,7 +609,7 @@ export const store = {
               const party = String(row[2] || '').trim();
               const srNo = String(row[3] || '').trim();
               const itemName = String(row[5] || '').trim();
-              
+
               let joNo = String(row[6] || '').trim();
               let rawUnit = String(row[7] || '').trim();
               let rawShade = String(row[8] || '').trim();
